@@ -7,6 +7,7 @@ token.pickle
 # Event Tracking Databases (may contain personal information)
 event_mappings.json
 test_event_mappings.json
+global_event_cache.json
 
 # Google Apps Script URL Configuration
 secure_credentials_config.py

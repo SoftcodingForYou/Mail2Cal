@@ -52,6 +52,7 @@ from googleapiclient.errors import HttpError
 from ai_parser import AIEmailParser
 from event_tracker import EventTracker
 from pdf_attachment_processor import PDFAttachmentProcessor
+from global_event_cache import GlobalEventCache
 
 # Gmail and Calendar API scopes
 SCOPES = [
@@ -107,6 +108,7 @@ class Mail2Cal:
         self.calendar_service = None
         self.ai_parser = AIEmailParser(self.config)
         self.event_tracker = EventTracker(self.config['event_tracking']['storage_file'])
+        self.global_cache = GlobalEventCache()
         self.pdf_processor = None  # Will be initialized after Gmail service is ready
         
     def authenticate(self):
@@ -134,6 +136,13 @@ class Mail2Cal:
         # Build services
         self.gmail_service = build('gmail', 'v1', credentials=creds)
         self.calendar_service = build('calendar', 'v3', credentials=creds)
+        
+        # Refresh global cache with current calendar state
+        calendar_ids = [
+            self.config['calendars']['calendar_id_1'],
+            self.config['calendars']['calendar_id_2']
+        ]
+        self.global_cache.refresh_from_calendars(self.calendar_service, calendar_ids)
         
         # Initialize PDF processor if enabled
         if self.config['pdf_processing']['enabled']:
@@ -444,13 +453,31 @@ class Mail2Cal:
         
         return intersection / union if union > 0 else 0.0
     
+    def _extract_event_date(self, event_data: Dict) -> str:
+        """Extract date string from event data for caching"""
+        if event_data.get('start_time'):
+            if hasattr(event_data['start_time'], 'date'):
+                return event_data['start_time'].date().isoformat()
+            else:
+                return str(event_data['start_time'])[:10]
+        else:
+            return datetime.now().date().isoformat()
+    
     def create_calendar_event(self, event_data: Dict, calendar_id: str) -> Optional[str]:
         """Create event in Google Calendar and return event ID"""
         try:
-            # Check for existing similar events in the target calendar
+            # Extract event date for global cache
+            event_date = self._extract_event_date(event_data)
+            
+            # Check global cache for duplicates first (most efficient)
+            if self.global_cache.is_duplicate(event_data['summary'], event_date, calendar_id):
+                print(f"[!] Skipping duplicate event (global cache): {event_data['summary']}")
+                return None
+            
+            # Fallback: Check calendar directly for duplicates
             existing_event_id = self.check_for_duplicate_event(event_data, calendar_id)
             if existing_event_id:
-                print(f"[!] Skipping duplicate event: {event_data['summary']} (exists as {existing_event_id})")
+                print(f"[!] Skipping duplicate event (calendar check): {event_data['summary']} (exists as {existing_event_id})")
                 return existing_event_id
             
             # Prepare event for Calendar API
@@ -510,6 +537,15 @@ class Mail2Cal:
             ).execute()
             
             event_id = result.get('id')
+            
+            # Add to global cache
+            self.global_cache.add_event(
+                title=event_data['summary'],
+                date=event_date,
+                calendar_id=calendar_id,
+                event_id=event_id
+            )
+            
             print(f"[+] Event created: {event_data['summary'][:50]}... (ID: {event_id})")
             return event_id
             
