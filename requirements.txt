@@ -1,0 +1,15 @@
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.5.0
+python-dateutil>=2.8.0
+beautifulsoup4>=4.9.0
+lxml>=4.6.0
+pyyaml>=6.0
+openai>=1.0.0
+anthropic>=0.25.0
+python-dotenv>=1.0.0
+requests>=2.25.0
+
+# PDF attachment processing
+pdfplumber>=0.9.0
+PyMuPDF>=1.23.0

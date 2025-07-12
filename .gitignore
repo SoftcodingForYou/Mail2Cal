@@ -1,0 +1,54 @@
+# Sensitive Credential Files
+credentials.json
+credentials.txt
+token.pickle
+.env
+
+# Event Tracking Databases (may contain personal information)
+event_mappings.json
+test_event_mappings.json
+
+# Google Apps Script URL Configuration
+secure_credentials_config.py
+
+# Python Cache and Virtual Environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup Files
+*.bak
+*.backup
+*~
+
+# Development/Test Files (prevent clutter)
+test_*.py
+*_test.py
+debug_*.py
+experimental_*.py
+temp_*.py
+scratch_*.py
+
+# Documentation drafts
+*_DRAFT.md
+*_WIP.md
+*_OLD.md
+MIGRATION_*.md
+IMPLEMENTATION_*.md
