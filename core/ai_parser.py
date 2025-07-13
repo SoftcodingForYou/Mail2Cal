@@ -134,7 +134,38 @@ DIRECTRICES IMPORTANTES:
 8. Si no se encuentran eventos, devolver {{"events": []}}
 9. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
 
+REGLAS ESPECIALES PARA ACTIVIDADES EXTRAESCOLARES Y TALLERES:
+- FORMATO TABULAR: Si el contenido está en formato de tabla con columnas de días (LUNES, MARTES, MIÉRCOLES, JUEVES, VIERNES, SÁBADO, DOMINGO), analizar cuidadosamente qué actividad pertenece a qué columna
+- Cada actividad debe programarse para el día correcto según su columna en la tabla
+- OBLIGATORIO: Establecer recurring: true para todas las actividades que mencionan días de la semana
+- En "notes" agregar claramente: "Actividad recurrente - todos los [DÍA] del segundo semestre 2025"
+- Para actividades del "segundo semestre", la fecha de inicio debe ser el próximo [DÍA] de la semana después del 15 de julio de {current_year}
+
+MAPEO DE DÍAS PARA CÁLCULO DE FECHAS:
+- LUNES → Próximo lunes disponible después del 15 de julio de {current_year}
+- MARTES → Próximo martes disponible después del 15 de julio de {current_year}  
+- MIÉRCOLES → Próximo miércoles disponible después del 15 de julio de {current_year}
+- JUEVES → Próximo jueves disponible después del 15 de julio de {current_year}
+- VIERNES → Próximo viernes disponible después del 15 de julio de {current_year}
+- SÁBADO → Próximo sábado disponible después del 15 de julio de {current_year}
+- DOMINGO → Próximo domingo disponible después del 15 de julio de {current_year}
+
+HORARIOS: Si se especifica un rango de tiempo (ej: "15:30 A 17:00 HRS"), usar esas horas exactas, NO marcar como all_day
+
+EJEMPLO DE INTERPRETACIÓN TABULAR:
+Si ves una tabla como:
+LUNES          MARTES         MIÉRCOLES
+CHEERLEADERS   FUTBOL         ARTE
+15:30 A 17:00  14:00 A 15:30  13:00 A 14:30
+
+Entonces:
+- CHEERLEADERS va el LUNES de 15:30 a 17:00
+- FUTBOL va el MARTES de 14:00 a 15:30  
+- ARTE va el MIÉRCOLES de 13:00 a 14:30
+
 CONTEXTO: Este es para un jardín infantil chileno, así que espera idioma español y formatos de fecha/hora chilenos.
+
+IMPORTANTE: Usa solo caracteres ASCII en el JSON. Reemplaza acentos (á→a, é→e, í→i, ó→o, ú→u, ñ→n) para evitar errores de codificación.
 
 Responde SOLO con JSON válido, sin texto adicional.
 """
@@ -149,7 +180,7 @@ Responde SOLO con JSON válido, sin texto adicional.
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
-            max_tokens=1500
+            max_tokens=3000
         )
         return response.choices[0].message.content
     
@@ -157,7 +188,7 @@ Responde SOLO con JSON válido, sin texto adicional.
         """Query Anthropic API"""
         response = self.client.messages.create(
             model=self.ai_config['model'],
-            max_tokens=1500,
+            max_tokens=3000,
             temperature=0.1,
             system="You are an expert at extracting structured event information from educational emails. Always respond with valid JSON only.",
             messages=[
@@ -175,6 +206,37 @@ Responde SOLO con JSON válido, sin texto adicional.
                 response = response[7:]
             if response.endswith('```'):
                 response = response[:-3]
+            
+            # Handle truncated JSON responses
+            if not response.rstrip().endswith('}') and not response.rstrip().endswith(']'):
+                print("[!] Response appears truncated, attempting to fix...")
+                
+                # Find the last complete event and truncate there
+                last_complete_event = -1
+                lines = response.split('\n')
+                
+                for i, line in enumerate(lines):
+                    if line.strip() == '},' or (line.strip() == '}' and i < len(lines) - 3):
+                        last_complete_event = i
+                
+                if last_complete_event > 0:
+                    # Truncate to last complete event
+                    response = '\n'.join(lines[:last_complete_event + 1])
+                    
+                    # Remove trailing comma and close properly
+                    response = response.rstrip().rstrip(',')
+                    response += '\n  ]\n}'
+                else:
+                    # Fallback: simple bracket counting
+                    open_braces = response.count('{') - response.count('}')
+                    open_brackets = response.count('[') - response.count(']')
+                    
+                    # Remove any incomplete trailing content
+                    if response.rstrip().endswith(','):
+                        response = response.rstrip().rstrip(',')
+                    
+                    # Close structures
+                    response += '}' * open_braces + ']' * open_brackets
             
             data = json.loads(response)
             events = []

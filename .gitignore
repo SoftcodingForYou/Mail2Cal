@@ -6,7 +6,7 @@ token.pickle
 
 # Event Tracking Databases (may contain personal information)
 event_mappings.json
-test_event_mappings.json
+file_event_mappings.json
 global_event_cache.json
 
 # Google Apps Script URL Configuration
@@ -46,6 +46,9 @@ debug_*.py
 experimental_*.py
 temp_*.py
 scratch_*.py
+cleanup_*.py
+fix_*.py
+troubleshooting/
 
 # Documentation drafts
 *_DRAFT.md
@@ -53,3 +56,6 @@ scratch_*.py
 *_OLD.md
 MIGRATION_*.md
 IMPLEMENTATION_*.md
+
+# Additional files to scan
+local_resources/

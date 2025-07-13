@@ -7,7 +7,7 @@ Mail2Cal - AI-powered email to calendar converter for school communications
 # SECURE CONFIGURATION - Credentials loaded from Google Sheets
 # =============================================================================
 
-from secure_credentials import get_secure_credential
+from auth.secure_credentials import get_secure_credential
 
 # Load credentials securely from Google Sheets
 try:
@@ -49,10 +49,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from ai_parser import AIEmailParser
-from event_tracker import EventTracker
-from pdf_attachment_processor import PDFAttachmentProcessor
-from global_event_cache import GlobalEventCache
+from .ai_parser import AIEmailParser
+from .event_tracker import EventTracker
+from processors.pdf_attachment_processor import PDFAttachmentProcessor
+from .global_event_cache import GlobalEventCache
 
 # Gmail and Calendar API scopes
 SCOPES = [
@@ -519,7 +519,14 @@ class Mail2Cal:
                     event['start'] = {'date': datetime.now().date().isoformat()}
                     event['end'] = {'date': (datetime.now().date() + timedelta(days=1)).isoformat()}
             
-            # Remove source field to avoid URL encoding issues
+            # Handle recurring events
+            if event_data.get('recurring'):
+                # For weekly recurring events, add recurrence rule
+                # Default to weekly recurrence until end of year
+                end_of_year = datetime(datetime.now().year, 12, 31)
+                until_date = end_of_year.strftime('%Y%m%dT235959Z')
+                event['recurrence'] = [f'RRULE:FREQ=WEEKLY;UNTIL={until_date}']
+                print(f"[+] Creating recurring weekly event until {end_of_year.date()}")
             
             # Add event metadata as extended properties
             event['extendedProperties'] = {
@@ -527,6 +534,7 @@ class Mail2Cal:
                     'mail2cal_source_email_id': event_data.get('source_email_id', ''),
                     'mail2cal_event_type': event_data.get('event_type', 'general'),
                     'mail2cal_priority': event_data.get('priority', 'medium'),
+                    'mail2cal_recurring': str(event_data.get('recurring', False)),
                     'mail2cal_created_at': datetime.now().isoformat()
                 }
             }

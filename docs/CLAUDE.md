@@ -1,29 +1,37 @@
 # Mail2Cal - AI-Powered Email to Calendar Converter
 
 ## Overview
-Mail2Cal is an intelligent system that converts school emails into Google Calendar events using Claude AI. The system features secure credential management, PDF attachment processing, multi-calendar routing, and smart default timing based on sender type.
+Mail2Cal is an intelligent system that converts school emails and local files (PDFs, images) into Google Calendar events using Claude AI. The system features secure credential management, OCR processing, multi-calendar routing, recurring event creation, and smart duplicate prevention.
 
 ## Project Structure
 
 ```
 Mail2Cal/
-├── 📄 Core Application
-│   ├── run_mail2cal.py                # Main entry point (START HERE)
-│   ├── mail2cal.py                    # Core Mail2Cal class
+├── 📄 run_mail2cal.py                 # Main entry point (START HERE)
+│
+├── 🧠 core/                           # Core Application Logic
+│   ├── mail2cal.py                    # Main Mail2Cal class
 │   ├── ai_parser.py                   # Claude AI integration
 │   ├── event_tracker.py               # Event tracking system
-│   ├── pdf_attachment_processor.py    # PDF attachment processing
-│   └── secure_credentials.py          # Secure credential management
+│   └── global_event_cache.py          # Smart duplicate prevention
+│
+├── ⚙️ processors/                     # Content Processors
+│   ├── file_event_processor.py        # File processing (PDFs, images)
+│   └── pdf_attachment_processor.py    # PDF attachment processing
+│
+├── 🔐 auth/                           # Authentication & Credentials
+│   ├── secure_credentials.py          # Secure credential management
+│   └── secure_credentials_config.py   # Credential configuration
 │
 ├── 🛠️ utils/                          # Utility Scripts
 │   ├── preview_emails.py              # Preview emails (no AI tokens)
 │   ├── cleanup_duplicates.py          # Remove duplicate events
 │   └── check_calendar.py              # View calendar events
 │
-├── 🔧 troubleshooting/                # Troubleshooting & Testing
-│   ├── test_setup.py                  # Validate installation
-│   ├── test_gmail_auth.py             # Test Gmail authentication
-│   └── test_limited.py                # Test with limited emails
+├── 📂 local_resources/                # File Processing Directory
+│   ├── Calendar_1/                    # Files for Calendar 1 only
+│   ├── Calendar_2/                    # Files for Calendar 2 only
+│   └── Both/                          # Files for both calendars
 │
 ├── 📚 docs/                           # Documentation
 │   └── CLAUDE.md                     # Complete documentation (this file)
@@ -113,6 +121,15 @@ python run_mail2cal.py --preview
 # Test mode (3 recent emails)
 python run_mail2cal.py --test
 
+# Process local files (PDFs and images)
+python run_mail2cal.py --process-files
+
+# List processed files
+python run_mail2cal.py --list-files
+
+# Check file processing dependencies
+python run_mail2cal.py --check-file-deps
+
 # Cleanup duplicates
 python run_mail2cal.py --cleanup
 
@@ -163,8 +180,15 @@ The system uses Google Sheets for secure credential storage:
 
 ### Regular Use
 1. `python run_mail2cal.py --full` - Update with new emails
-2. `python run_mail2cal.py --cleanup` - Remove duplicates if needed
-3. `python run_mail2cal.py --check` - Review calendar events
+2. `python run_mail2cal.py --process-files` - Process local files
+3. `python run_mail2cal.py --cleanup` - Remove duplicates if needed
+4. `python run_mail2cal.py --check` - Review calendar events
+
+### File Processing Workflow
+1. Place files in `local_resources/Calendar_1/`, `local_resources/Calendar_2/`, or `local_resources/Both/`
+2. `python run_mail2cal.py --check-file-deps` - Verify OCR dependencies
+3. `python run_mail2cal.py --process-files` - Extract events from files
+4. `python run_mail2cal.py --list-files` - Review processed files
 
 ### Troubleshooting
 ```bash
@@ -178,14 +202,37 @@ python troubleshooting/test_gmail_auth.py
 python troubleshooting/test_limited.py
 ```
 
-## Email Processing Flow
+## Processing Flows
 
+### Email Processing Flow
 1. **Authentication**: OAuth 2.0 with Google APIs
 2. **Email Retrieval**: Fetch emails matching filter criteria
 3. **PDF Processing**: Extract text from PDF attachments (if any)
 4. **AI Analysis**: Claude analyzes email + PDF content for events
 5. **Routing Decision**: Determine target calendar(s) based on sender
 6. **Event Creation**: Create/update calendar events with smart timing
+
+### File Processing Flow
+1. **File Scanning**: Scan `local_resources/` directory for PDFs and images
+2. **Content Extraction**: 
+   - PDFs: Text extraction using pdfplumber/PyMuPDF
+   - Images: OCR text extraction using Tesseract
+3. **AI Analysis**: Claude analyzes extracted text for calendar events
+4. **Calendar Routing**: Route to Calendar 1, Calendar 2, or Both based on folder
+5. **Event Creation**: Create recurring events with proper scheduling
+6. **Change Detection**: Track file changes and update events accordingly
+
+### Supported File Types
+- **PDFs**: All PDF formats supported
+- **Images**: JPG, JPEG, PNG, TIFF, BMP (requires Tesseract OCR)
+
+### Directory Structure for Files
+```
+local_resources/
+├── Calendar_1/        # Events for Calendar 1 only
+├── Calendar_2/        # Events for Calendar 2 only  
+└── Both/             # Events for both calendars
+```
 7. **Tracking**: Record email-to-event mappings to prevent duplicates
 
 ## PDF Attachment Processing
