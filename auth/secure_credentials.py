@@ -20,7 +20,7 @@ except ImportError:
 
 # Load URL from configuration file
 try:
-    from secure_credentials_config import CREDENTIALS_URL
+    from .secure_credentials_config import CREDENTIALS_URL
 except ImportError:
     # Fallback URL - replace with your actual Google Apps Script Web App URL
     CREDENTIALS_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"

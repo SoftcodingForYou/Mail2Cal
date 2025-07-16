@@ -130,14 +130,14 @@ DIRECTRICES IMPORTANTES:
 4. Extraer fechas límite de tareas, fechas de entrega de proyectos y entregas
 5. Incluir reuniones de apoderados, eventos escolares y fechas límite administrativas
 6. Si se mencionan rangos de tiempo (ej: "de 9:00 a 11:00"), establecer start_time y end_time
-7. Para eventos recurrentes, establecer recurring como true y anotar el patrón en description
+7. EVITAR eventos recurrentes - crear solo eventos únicos. Solo usar recurring: true para actividades ESPECÍFICAMENTE mencionadas como semanales/recurrentes
 8. Si no se encuentran eventos, devolver {{"events": []}}
 9. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
 
 REGLAS ESPECIALES PARA ACTIVIDADES EXTRAESCOLARES Y TALLERES:
 - FORMATO TABULAR: Si el contenido está en formato de tabla con columnas de días (LUNES, MARTES, MIÉRCOLES, JUEVES, VIERNES, SÁBADO, DOMINGO), analizar cuidadosamente qué actividad pertenece a qué columna
 - Cada actividad debe programarse para el día correcto según su columna en la tabla
-- OBLIGATORIO: Establecer recurring: true para todas las actividades que mencionan días de la semana
+- CONSERVADOR: Solo establecer recurring: true si el email EXPLÍCITAMENTE dice "semanal", "todas las semanas", "recurrente", "cada semana", "semana a semana"
 - En "notes" agregar claramente: "Actividad recurrente - todos los [DÍA] del segundo semestre 2025"
 - Para actividades del "segundo semestre", la fecha de inicio debe ser el próximo [DÍA] de la semana después del 15 de julio de {current_year}
 

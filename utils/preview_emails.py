@@ -17,9 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Secure configuration - load from environment or secure storage
-import sys
-sys.path.append('..')
-from secure_credentials import get_secure_credential
+from auth.secure_credentials import get_secure_credential
 
 # Load credentials securely
 try:

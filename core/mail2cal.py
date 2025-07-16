@@ -490,9 +490,9 @@ class Mail2Cal:
             if event_data.get('location'):
                 event['location'] = event_data['location']
             
-            # Handle date/time
+            # Handle date/time - PREVENT EXTENDED MULTI-DAY EVENTS
             if event_data.get('all_day'):
-                # All-day event
+                # All-day event - ALWAYS single day only
                 if event_data['start_time']:
                     start_date = event_data['start_time'].date()
                     event['start'] = {'date': start_date.isoformat()}
@@ -500,11 +500,18 @@ class Mail2Cal:
                 else:
                     event['start'] = {'date': datetime.now().date().isoformat()}
                     event['end'] = {'date': (datetime.now().date() + timedelta(days=1)).isoformat()}
+                print(f"[*] Creating single-day all-day event to prevent overlaps")
             else:
-                # Timed event
+                # Timed event - LIMIT DURATION TO PREVENT OVERLAPS
                 if event_data['start_time']:
                     start_dt = event_data['start_time']
                     end_dt = event_data['end_time'] or start_dt + timedelta(hours=1)
+                    
+                    # Prevent events longer than 8 hours (likely misinterpretation)
+                    duration = end_dt - start_dt
+                    if duration.total_seconds() > 8 * 3600:  # 8 hours
+                        end_dt = start_dt + timedelta(hours=2)  # Default to 2 hours
+                        print(f"[!] WARNING: Event duration capped at 2 hours to prevent overlaps")
                     
                     event['start'] = {
                         'dateTime': start_dt.isoformat(),
@@ -519,14 +526,14 @@ class Mail2Cal:
                     event['start'] = {'date': datetime.now().date().isoformat()}
                     event['end'] = {'date': (datetime.now().date() + timedelta(days=1)).isoformat()}
             
-            # Handle recurring events
+            # Handle recurring events - CONSERVATIVE APPROACH
             if event_data.get('recurring'):
-                # For weekly recurring events, add recurrence rule
-                # Default to weekly recurrence until end of year
-                end_of_year = datetime(datetime.now().year, 12, 31)
-                until_date = end_of_year.strftime('%Y%m%dT235959Z')
-                event['recurrence'] = [f'RRULE:FREQ=WEEKLY;UNTIL={until_date}']
-                print(f"[+] Creating recurring weekly event until {end_of_year.date()}")
+                # Limit recurring events to maximum 3 months to avoid overlaps
+                max_end_date = datetime.now() + timedelta(days=90)  # 3 months max
+                until_date = max_end_date.strftime('%Y%m%dT235959Z')
+                event['recurrence'] = [f'RRULE:FREQ=WEEKLY;COUNT=12']  # Max 12 occurrences
+                print(f"[+] Creating LIMITED recurring event (max 12 weeks)")
+                print(f"[!] WARNING: Recurring event limited to prevent overlaps")
             
             # Add event metadata as extended properties
             event['extendedProperties'] = {

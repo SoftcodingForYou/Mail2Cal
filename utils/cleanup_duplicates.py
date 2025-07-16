@@ -13,9 +13,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Configuration - Load from secure storage
-import sys
-sys.path.append('..')
-from secure_credentials import get_secure_credential
+from auth.secure_credentials import get_secure_credential
 
 GOOGLE_CALENDAR_ID = get_secure_credential('GOOGLE_CALENDAR_ID_1')  # Default to Calendar 1
 SCOPES = ['https://www.googleapis.com/auth/calendar']

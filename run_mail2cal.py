@@ -132,6 +132,7 @@ def process_files():
         print(f"Files processed: {results['files_processed']}")
         print(f"Events created: {results['events_created']}")
         print(f"Events updated: {results['events_updated']}")
+        print(f"Events enhanced: {results.get('events_enhanced', 0)}")
         print(f"Files skipped (unchanged): {results['files_skipped']}")
         
         if results.get('errors'):
@@ -200,7 +201,7 @@ def check_file_dependencies():
         print("|-- Calendar_1/     # Files for Calendar 1 only")
         print("|-- Calendar_2/     # Files for Calendar 2 only")
         print("|-- Both/           # Files for both calendars")
-        print("\nSupported formats: PDF, JPG, PNG, TIFF, BMP")
+        print("\nSupported formats: PDF, JPG, PNG, TIFF, BMP, EML")
     else:
         print("\n[-] File processing not available")
         print("\nTo enable PDF processing:")

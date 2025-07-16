@@ -8,10 +8,13 @@ Follows the same creation/updating/deletion logic as email processing
 import os
 import hashlib
 import json
+import email
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 import mimetypes
+import base64
+from bs4 import BeautifulSoup
 
 # OCR and image processing
 try:
@@ -119,6 +122,7 @@ class FileEventProcessor:
             "files_processed": 0,
             "events_created": 0,
             "events_updated": 0,
+            "events_enhanced": 0,
             "files_skipped": 0,
             "errors": []
         }
@@ -136,26 +140,39 @@ class FileEventProcessor:
             
             print(f"[*] Processing files for {calendar_name}")
             
-            # Process files in this calendar directory
-            for file_path in calendar_dir.iterdir():
-                if file_path.is_file() and self._is_supported_file(file_path):
-                    try:
-                        file_result = self._process_single_file(file_path, calendar_name)
-                        
-                        results["files_processed"] += 1
-                        if file_result["action"] == "created":
-                            results["events_created"] += file_result["events_count"]
-                        elif file_result["action"] == "updated":
-                            results["events_updated"] += file_result["events_count"]
-                        elif file_result["action"] == "skipped":
-                            results["files_skipped"] += 1
-                            
-                    except Exception as e:
-                        error_msg = f"Error processing {file_path.name}: {e}"
-                        print(f"[!] {error_msg}")
-                        results["errors"].append(error_msg)
+            # Process files recursively in this calendar directory
+            self._process_directory_recursively(calendar_dir, calendar_name, results)
         
         return results
+    
+    def _process_directory_recursively(self, directory: Path, calendar_name: str, results: Dict):
+        """Recursively process all supported files in a directory and its subdirectories"""
+        for item_path in directory.iterdir():
+            if item_path.is_file() and self._is_supported_file(item_path):
+                # Process the file
+                try:
+                    print(f"[*] Found file: {item_path.relative_to(self.base_directory)}")
+                    file_result = self._process_single_file(item_path, calendar_name)
+                    
+                    results["files_processed"] += 1
+                    if file_result["action"] == "created":
+                        results["events_created"] += file_result["events_count"]
+                    elif file_result["action"] == "updated":
+                        results["events_updated"] += file_result["events_count"]
+                    elif file_result["action"] == "enhanced":
+                        results["events_enhanced"] += file_result["events_count"]
+                    elif file_result["action"] == "skipped":
+                        results["files_skipped"] += 1
+                        
+                except Exception as e:
+                    error_msg = f"Error processing {item_path.name}: {e}"
+                    print(f"[!] {error_msg}")
+                    results["errors"].append(error_msg)
+            
+            elif item_path.is_dir():
+                # Recursively process subdirectory
+                print(f"[*] Scanning subdirectory: {item_path.relative_to(self.base_directory)}")
+                self._process_directory_recursively(item_path, calendar_name, results)
     
     def _is_supported_file(self, file_path: Path) -> bool:
         """Check if file type is supported"""
@@ -165,11 +182,12 @@ class FileEventProcessor:
             'image/jpeg',
             'image/png',
             'image/tiff',
-            'image/bmp'
+            'image/bmp',
+            'message/rfc822'  # EML files
         ]
         
         return (mime_type in supported_types or 
-                file_path.suffix.lower() in ['.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.bmp'])
+                file_path.suffix.lower() in ['.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.bmp', '.eml'])
     
     def _process_single_file(self, file_path: Path, calendar_name: str) -> Dict:
         """
@@ -194,6 +212,10 @@ class FileEventProcessor:
     
     def _create_file_events(self, file_path: Path, file_id: str, file_hash: str, calendar_name: str) -> Dict:
         """Create events for a new file"""
+        
+        # Handle EML files differently - parse as actual emails
+        if file_path.suffix.lower() == '.eml':
+            return self._create_eml_events(file_path, file_id, file_hash, calendar_name)
         
         # Extract text content from file
         content = self._extract_file_content(file_path)
@@ -224,21 +246,67 @@ class FileEventProcessor:
         # Determine target calendars
         target_calendars = self._get_target_calendars(calendar_name)
         
-        # Create events in calendar(s)
+        # Create events in calendar(s) with full duplicate checking
         created_events = []
+        
+        # Check for similar events in the email tracker (cross-system duplicate detection)
+        similar_events = self.mail2cal.event_tracker.find_similar_events(events)
+        
         for event in events:
+            event_signature = self.mail2cal.event_tracker.generate_event_signature(event)
+            
+            # Process event for each target calendar
             for calendar_id in target_calendars:
+                calendar_name_display = "Calendar 1" if calendar_id == self.mail2cal.config['calendars']['calendar_id_1'] else "Calendar 2"
+                
+                # Check if we have a similar event from emails already
+                if event_signature in similar_events:
+                    existing_event_id = similar_events[event_signature]
+                    print(f"[~] Found similar event (email tracker): {event.get('summary', '')[:50]}... (ID: {existing_event_id})")
+                    
+                    # Try to enhance the existing event with new information
+                    if self._enhance_existing_event(existing_event_id, event, calendar_id):
+                        print(f"[+] Enhanced existing event with new information from file")
+                        created_events.append({
+                            'calendar_event_id': existing_event_id,
+                            'calendar_id': calendar_id,
+                            'summary': event.get('summary', ''),
+                            'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
+                            'created_at': datetime.now().isoformat(),
+                            'action': 'enhanced'
+                        })
+                    continue
+                
                 try:
+                    # This call also does global cache + calendar duplicate checking
                     event_id = self.mail2cal.create_calendar_event(event, calendar_id)
+                    
+                    # If create_calendar_event returns None, it might be a duplicate
+                    # Try to find and enhance the existing event
+                    if not event_id:
+                        existing_event_id = self.mail2cal.check_for_duplicate_event(event, calendar_id)
+                        if existing_event_id and self._enhance_existing_event(existing_event_id, event, calendar_id):
+                            print(f"[+] Enhanced existing calendar event with new information")
+                            created_events.append({
+                                'calendar_event_id': existing_event_id,
+                                'calendar_id': calendar_id,
+                                'summary': event.get('summary', ''),
+                                'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
+                                'created_at': datetime.now().isoformat(),
+                                'action': 'enhanced'
+                            })
+                        continue
+                    
                     if event_id:
                         created_events.append({
                             'calendar_event_id': event_id,
                             'calendar_id': calendar_id,
                             'summary': event.get('summary', ''),
                             'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
-                            'created_at': datetime.now().isoformat()
+                            'created_at': datetime.now().isoformat(),
+                            'action': 'created'
                         })
-                        print(f"[+] Created event: {event.get('summary', '')[:50]}...")
+                        print(f"[+] Created event in {calendar_name_display}: {event.get('summary', '')[:50]}...")
                 except Exception as e:
                     print(f"[!] Error creating event: {e}")
         
@@ -256,7 +324,23 @@ class FileEventProcessor:
         
         self._save_file_mappings()
         
-        return {"action": "created", "events_count": len(created_events)}
+        # Also track these events in the main email tracker for cross-system duplicate detection
+        if created_events:
+            # Create calendar event IDs list for email tracker
+            calendar_event_ids = [event['calendar_event_id'] for event in created_events]
+            # Track the file processing (treating file as a pseudo-email)
+            self.mail2cal.event_tracker.track_email_processing(fake_email, events, calendar_event_ids)
+        
+        # Determine the action based on what happened
+        enhanced_count = len([e for e in created_events if e.get('action') == 'enhanced'])
+        created_count = len([e for e in created_events if e.get('action') == 'created'])
+        
+        if enhanced_count > 0 and created_count == 0:
+            return {"action": "enhanced", "events_count": enhanced_count}
+        elif enhanced_count > 0 and created_count > 0:
+            return {"action": "mixed", "events_count": len(created_events), "enhanced": enhanced_count, "created": created_count}
+        else:
+            return {"action": "created", "events_count": created_count}
     
     def _update_file_events(self, file_path: Path, file_id: str, file_hash: str, calendar_name: str) -> Dict:
         """Update events for a changed file"""
@@ -292,6 +376,8 @@ class FileEventProcessor:
             return self._extract_pdf_content(file_path)
         elif file_extension in ['.jpg', '.jpeg', '.png', '.tiff', '.bmp']:
             return self._extract_image_content(file_path)
+        elif file_extension == '.eml':
+            return self._extract_eml_content(file_path)
         else:
             print(f"[!] Unsupported file type: {file_extension}")
             return ""
@@ -451,6 +537,343 @@ class FileEventProcessor:
             })
         
         return sorted(files, key=lambda x: x['processed_at'], reverse=True)
+    
+    def _create_eml_events(self, file_path: Path, file_id: str, file_hash: str, calendar_name: str) -> Dict:
+        """Create events for a new EML file"""
+        
+        # Parse EML file into email format
+        email_data = self._parse_eml_file(file_path)
+        if not email_data:
+            return {"action": "skipped", "events_count": 0}
+        
+        print(f"[+] Parsed EML: {email_data['subject'][:50]}...")
+        print(f"[+] From: {email_data['sender']}")
+        print(f"[+] Date: {email_data['date']}")
+        print(f"[+] Body length: {len(email_data['body'])} characters")
+        
+        # Use existing AI parser to extract events (same as Gmail emails)
+        events = self.mail2cal.parse_events_from_email(email_data)
+        
+        if not events:
+            print(f"[!] No events found in EML: {file_path.name}")
+            return {"action": "skipped", "events_count": 0}
+        
+        print(f"[+] Found {len(events)} event(s) in EML")
+        
+        # Determine target calendars based on calendar directory
+        target_calendars = self._get_target_calendars(calendar_name)
+        
+        # Create events in calendar(s) with full duplicate checking (same as Gmail processing)
+        created_events = []
+        
+        # Check for similar events in the email tracker (cross-system duplicate detection)
+        similar_events = self.mail2cal.event_tracker.find_similar_events(events)
+        
+        for event in events:
+            # Add source email ID for tracking
+            event['source_email_id'] = email_data['id']
+            event_signature = self.mail2cal.event_tracker.generate_event_signature(event)
+            
+            # Process event for each target calendar
+            for calendar_id in target_calendars:
+                calendar_name_display = "Calendar 1" if calendar_id == self.mail2cal.config['calendars']['calendar_id_1'] else "Calendar 2"
+                
+                # Check if we have a similar event from emails already
+                if event_signature in similar_events:
+                    existing_event_id = similar_events[event_signature]
+                    print(f"[~] Found similar event (email tracker): {event.get('summary', '')[:50]}... (ID: {existing_event_id})")
+                    
+                    # Try to enhance the existing event with new information
+                    if self._enhance_existing_event(existing_event_id, event, calendar_id):
+                        print(f"[+] Enhanced existing event with new information from EML")
+                        created_events.append({
+                            'calendar_event_id': existing_event_id,
+                            'calendar_id': calendar_id,
+                            'summary': event.get('summary', ''),
+                            'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
+                            'created_at': datetime.now().isoformat(),
+                            'action': 'enhanced'
+                        })
+                    continue
+                
+                try:
+                    # This call also does global cache + calendar duplicate checking
+                    event_id = self.mail2cal.create_calendar_event(event, calendar_id)
+                    
+                    # If create_calendar_event returns None, it might be a duplicate
+                    # Try to find and enhance the existing event
+                    if not event_id:
+                        existing_event_id = self.mail2cal.check_for_duplicate_event(event, calendar_id)
+                        if existing_event_id and self._enhance_existing_event(existing_event_id, event, calendar_id):
+                            print(f"[+] Enhanced existing calendar event with new information")
+                            created_events.append({
+                                'calendar_event_id': existing_event_id,
+                                'calendar_id': calendar_id,
+                                'summary': event.get('summary', ''),
+                                'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
+                                'created_at': datetime.now().isoformat(),
+                                'action': 'enhanced'
+                            })
+                        continue
+                    
+                    if event_id:
+                        created_events.append({
+                            'calendar_event_id': event_id,
+                            'calendar_id': calendar_id,
+                            'summary': event.get('summary', ''),
+                            'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
+                            'created_at': datetime.now().isoformat(),
+                            'action': 'created'
+                        })
+                        print(f"[+] Created event in {calendar_name_display}: {event.get('summary', '')[:50]}...")
+                except Exception as e:
+                    print(f"[!] Error creating event: {e}")
+        
+        # Track the EML mapping
+        self.file_mappings[file_id] = {
+            'file_path': str(file_path),
+            'file_hash': file_hash,
+            'file_name': file_path.name,
+            'calendar_name': calendar_name,
+            'processed_at': datetime.now().isoformat(),
+            'last_modified': datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
+            'calendar_events': created_events,
+            'content_length': len(email_data['body']),
+            'file_type': 'eml',
+            'email_data': {
+                'subject': email_data['subject'],
+                'sender': email_data['sender'],
+                'date': email_data['date'],
+                'body_length': len(email_data['body'])
+            }
+        }
+        
+        self._save_file_mappings()
+        
+        # Also track these events in the main email tracker for cross-system duplicate detection
+        if created_events:
+            # Create calendar event IDs list for email tracker
+            calendar_event_ids = [event['calendar_event_id'] for event in created_events]
+            # Track the EML processing (treating it as a real email)
+            self.mail2cal.event_tracker.track_email_processing(email_data, events, calendar_event_ids)
+        
+        # Determine the action based on what happened
+        enhanced_count = len([e for e in created_events if e.get('action') == 'enhanced'])
+        created_count = len([e for e in created_events if e.get('action') == 'created'])
+        
+        if enhanced_count > 0 and created_count == 0:
+            return {"action": "enhanced", "events_count": enhanced_count}
+        elif enhanced_count > 0 and created_count > 0:
+            return {"action": "mixed", "events_count": len(created_events), "enhanced": enhanced_count, "created": created_count}
+        else:
+            return {"action": "created", "events_count": created_count}
+    
+    def _parse_eml_file(self, file_path: Path) -> Dict:
+        """Parse EML file into the same format as Gmail emails"""
+        try:
+            with open(file_path, 'rb') as f:
+                email_message = email.message_from_bytes(f.read())
+            
+            # Extract headers (same format as Gmail)
+            subject = email_message.get('Subject', '')
+            sender = email_message.get('From', '')
+            date_str = email_message.get('Date', '')
+            message_id = email_message.get('Message-ID', f"eml_{file_path.name}")
+            
+            # Extract body using the same logic as Gmail processing
+            body = self._extract_eml_body(email_message)
+            
+            # Create email dict in same format as Gmail messages
+            email_data = {
+                'id': message_id,
+                'subject': subject,
+                'sender': sender,
+                'date': date_str,
+                'body': body,
+                'snippet': body[:150] + "..." if len(body) > 150 else body,
+                'has_pdf_attachments': False  # TODO: Could add attachment processing later
+            }
+            
+            return email_data
+            
+        except Exception as e:
+            print(f"[!] Error parsing EML file {file_path}: {e}")
+            return None
+    
+    def _extract_eml_body(self, email_message) -> str:
+        """Extract email body with improved parsing (same as Gmail processing)"""
+        body_parts = []
+        
+        def extract_from_part(part):
+            """Recursively extract text from email parts"""
+            if part.is_multipart():
+                # Multipart message, recurse into parts
+                for subpart in part.get_payload():
+                    extract_from_part(subpart)
+            else:
+                # Single part, extract content
+                content_type = part.get_content_type()
+                charset = part.get_content_charset() or 'utf-8'
+                
+                try:
+                    if content_type == 'text/plain':
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            text = payload.decode(charset, errors='ignore').strip()
+                            if text:
+                                body_parts.append(text)
+                    elif content_type == 'text/html':
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            html = payload.decode(charset, errors='ignore')
+                            # Parse HTML and extract text
+                            soup = BeautifulSoup(html, 'html.parser')
+                            # Remove script and style elements
+                            for script in soup(["script", "style"]):
+                                script.decompose()
+                            text = soup.get_text()
+                            # Clean up whitespace
+                            lines = (line.strip() for line in text.splitlines())
+                            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                            text = ' '.join(chunk for chunk in chunks if chunk)
+                            if text.strip():
+                                body_parts.append(text.strip())
+                except Exception as e:
+                    print(f"[!] Error decoding part {content_type}: {e}")
+        
+        # Start extraction
+        extract_from_part(email_message)
+        
+        # Combine all parts
+        body = '\n\n'.join(body_parts)
+        
+        return body.strip()
+    
+    def _extract_eml_content(self, file_path: Path) -> str:
+        """Extract content from EML file - this method is kept for consistency but not used for EML processing"""
+        # EML files are processed directly as emails via _create_eml_events
+        # This method exists for consistency with other file types
+        email_data = self._parse_eml_file(file_path)
+        if email_data:
+            return email_data['body']
+        return ""
+    
+    def _enhance_existing_event(self, existing_event_id: str, new_event: Dict, calendar_id: str) -> bool:
+        """
+        Enhance an existing calendar event with additional information from new sources.
+        Returns True if the event was successfully enhanced.
+        """
+        try:
+            # Get the existing event from Google Calendar
+            existing_event = self.mail2cal.calendar_service.events().get(
+                calendarId=calendar_id,
+                eventId=existing_event_id
+            ).execute()
+            
+            print(f"[*] Analyzing existing event for enhancement opportunities...")
+            
+            # Track what gets enhanced
+            enhancements = []
+            enhanced = False
+            
+            # 1. Enhance description with additional details
+            existing_description = existing_event.get('description', '')
+            new_description = new_event.get('description', '')
+            
+            if new_description and new_description not in existing_description:
+                # Merge descriptions intelligently
+                if existing_description:
+                    # Add new information as a separate section
+                    enhanced_description = f"{existing_description}\n\n--- INFORMACIÓN ADICIONAL ---\n{new_description}"
+                else:
+                    enhanced_description = new_description
+                
+                existing_event['description'] = enhanced_description
+                enhancements.append("description")
+                enhanced = True
+            
+            # 2. Enhance location if missing or add alternative location
+            existing_location = existing_event.get('location', '')
+            new_location = new_event.get('location', '')
+            
+            if new_location and new_location not in existing_location:
+                if not existing_location:
+                    existing_event['location'] = new_location
+                    enhancements.append("location")
+                    enhanced = True
+                elif new_location.lower() != existing_location.lower():
+                    # Add as alternative location
+                    existing_event['location'] = f"{existing_location} / {new_location}"
+                    enhancements.append("location (alternative)")
+                    enhanced = True
+            
+            # 3. Enhance time precision if the new event has more specific timing
+            if self._has_better_time_info(existing_event, new_event):
+                # Update with more precise timing
+                if new_event.get('start_time') and not new_event.get('all_day'):
+                    start_dt = new_event['start_time']
+                    end_dt = new_event.get('end_time') or start_dt + timedelta(hours=1)
+                    
+                    existing_event['start'] = {
+                        'dateTime': start_dt.isoformat(),
+                        'timeZone': 'America/Santiago',
+                    }
+                    existing_event['end'] = {
+                        'dateTime': end_dt.isoformat(),
+                        'timeZone': 'America/Santiago',
+                    }
+                    enhancements.append("time precision")
+                    enhanced = True
+            
+            # 4. Add source information to extended properties
+            if 'extendedProperties' not in existing_event:
+                existing_event['extendedProperties'] = {'private': {}}
+            
+            # Track sources that contributed to this event
+            sources = existing_event['extendedProperties']['private'].get('mail2cal_sources', '')
+            new_source = f"file_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            if sources:
+                existing_event['extendedProperties']['private']['mail2cal_sources'] = f"{sources}, {new_source}"
+            else:
+                existing_event['extendedProperties']['private']['mail2cal_sources'] = new_source
+            
+            existing_event['extendedProperties']['private']['mail2cal_enhanced_at'] = datetime.now().isoformat()
+            
+            # 5. Update the event if we made any enhancements
+            if enhanced:
+                result = self.mail2cal.calendar_service.events().update(
+                    calendarId=calendar_id,
+                    eventId=existing_event_id,
+                    body=existing_event
+                ).execute()
+                
+                print(f"[+] Enhanced with: {', '.join(enhancements)}")
+                return True
+            else:
+                print(f"[*] No new information to add")
+                return False
+                
+        except Exception as e:
+            print(f"[!] Error enhancing existing event: {e}")
+            return False
+    
+    def _has_better_time_info(self, existing_event: Dict, new_event: Dict) -> bool:
+        """Check if the new event has better/more precise time information"""
+        # If existing event is all-day and new event has specific time
+        existing_start = existing_event.get('start', {})
+        if 'date' in existing_start and new_event.get('start_time') and not new_event.get('all_day'):
+            return True
+        
+        # If existing event has generic time (8:00 AM) and new event has different specific time
+        if 'dateTime' in existing_start:
+            existing_time = existing_start['dateTime']
+            if '08:00:00' in existing_time and new_event.get('start_time'):
+                new_time = new_event['start_time'].time()
+                if new_time.hour != 8 or new_time.minute != 0:
+                    return True
+        
+        return False
 
 
 def check_file_processing_dependencies() -> Tuple[bool, str]:
