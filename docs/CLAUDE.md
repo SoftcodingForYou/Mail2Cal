@@ -163,7 +163,7 @@ The system uses Google Sheets for secure credential storage:
 | `TEACHER_3_EMAIL` | Teacher 3 → Both calendars (Afterschool) |
 | `TEACHER_4_EMAIL` | Teacher 4 → Both calendars (Afterschool) |
 | `AI_MODEL` | Claude model to use |
-| `DEFAULT_MONTHS_BACK` | How many months to scan |
+| `DEFAULT_MONTHS_BACK` | How many months to scan (supports decimals: 0.5 = 2 weeks) |
 
 ### Email Processing
 - **Source**: Gmail account (configurable)

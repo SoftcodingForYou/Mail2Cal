@@ -23,14 +23,14 @@ from auth.secure_credentials import get_secure_credential
 try:
     GMAIL_ADDRESS = get_secure_credential('GMAIL_ADDRESS')
     EMAIL_SENDER_FILTER = get_secure_credential('EMAIL_SENDER_FILTER')
-    DEFAULT_MONTHS_BACK = int(get_secure_credential('DEFAULT_MONTHS_BACK'))
+    DEFAULT_MONTHS_BACK = float(get_secure_credential('DEFAULT_MONTHS_BACK'))
 except Exception as e:
     print(f"[!] Error loading credentials: {e}")
     print("[!] Falling back to environment variables")
     import os
     GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS', 'your-email@gmail.com')
     EMAIL_SENDER_FILTER = os.getenv('EMAIL_SENDER_FILTER', 'from:*school*')
-    DEFAULT_MONTHS_BACK = int(os.getenv('DEFAULT_MONTHS_BACK', '12'))
+    DEFAULT_MONTHS_BACK = float(os.getenv('DEFAULT_MONTHS_BACK', '12'))
 
 # Gmail API scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -64,7 +64,7 @@ class EmailPreview:
     def get_school_emails(self, days_back: int = None) -> List[Dict]:
         """Fetch emails from school within specified date range"""
         if days_back is None:
-            days_back = DEFAULT_MONTHS_BACK * 30
+            days_back = int(DEFAULT_MONTHS_BACK * 30)
         
         # Calculate date range
         end_date = datetime.now()

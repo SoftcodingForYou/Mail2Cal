@@ -23,7 +23,7 @@ Create a Google Sheets document with these credentials:
 | `TEACHER_3_EMAIL` | `teacher3@school.com` | Teacher 3 → Both calendars (Afterschool) |
 | `TEACHER_4_EMAIL` | `teacher4@school.com` | Teacher 4 → Both calendars (Afterschool) |
 | `AI_MODEL` | `claude-3-5-sonnet-20241022` | Claude model to use |
-| `DEFAULT_MONTHS_BACK` | `12` | How many months to scan |
+| `DEFAULT_MONTHS_BACK` | `12` | How many months to scan (supports decimals: 0.5 = 2 weeks, 1.5 = 6 weeks) |
 
 ### 3. Deploy Google Apps Script
 

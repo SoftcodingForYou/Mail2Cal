@@ -21,7 +21,7 @@ try:
     TEACHER_3_EMAIL = get_secure_credential('TEACHER_3_EMAIL')  # Teacher 3 (Afterschool) → Both Calendars
     TEACHER_4_EMAIL = get_secure_credential('TEACHER_4_EMAIL')  # Teacher 4 (Afterschool) → Both Calendars
     AI_MODEL = get_secure_credential('AI_MODEL')
-    DEFAULT_MONTHS_BACK = int(get_secure_credential('DEFAULT_MONTHS_BACK'))
+    DEFAULT_MONTHS_BACK = float(get_secure_credential('DEFAULT_MONTHS_BACK'))
     
     print("[+] Credentials loaded securely from Google Sheets")
     
@@ -156,7 +156,7 @@ class Mail2Cal:
     def get_emails_from_date_range(self, days_back: int = None) -> List[Dict]:
         """Fetch emails from school within specified date range"""
         if days_back is None:
-            days_back = self.config['date_range']['default_months_back'] * 30
+            days_back = int(self.config['date_range']['default_months_back'] * 30)
         
         # Calculate date range
         end_date = datetime.now()
