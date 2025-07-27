@@ -95,6 +95,37 @@ class EventTracker:
         
         return current_hash != stored_hash
     
+    def events_still_exist(self, email: Dict, calendar_service, calendar_ids: List[str]) -> bool:
+        """Check if the tracked events for an email still exist in the calendars"""
+        email_id = email['id']
+        if email_id not in self.mappings:
+            return False
+        
+        tracked_events = self.mappings[email_id]['calendar_events']
+        if not tracked_events:
+            return False
+        
+        # Check if at least one tracked event still exists
+        for event_info in tracked_events:
+            event_id = event_info['calendar_event_id']
+            
+            # Try to find this event in any of the calendars
+            for calendar_id in calendar_ids:
+                try:
+                    calendar_service.events().get(
+                        calendarId=calendar_id,
+                        eventId=event_id
+                    ).execute()
+                    # If we get here, the event exists
+                    return True
+                except:
+                    # Event doesn't exist in this calendar, try next
+                    continue
+        
+        # None of the tracked events exist
+        print(f"[!] Tracked events for email '{email['subject'][:40]}...' no longer exist in calendars")
+        return False
+    
     def get_existing_calendar_events(self, email: Dict) -> List[str]:
         """Get list of calendar event IDs for a given email"""
         email_id = email['id']

@@ -141,15 +141,17 @@ class GlobalEventCache:
     
     def is_duplicate(self, title: str, date: str, calendar_id: str) -> bool:
         """
-        Intelligent duplicate detection
+        Intelligent duplicate detection - Fixed to handle legitimate multi-calendar events
         """
         normalized_title = self.normalize_title(title)
         keywords = self.extract_keywords(title)
         
         for existing_event in self.events.values():
-            # Skip if different calendar (unless it's a global event like holidays)
-            if (existing_event.calendar_id != calendar_id and 
-                not self._is_global_event(keywords)):
+            # FIXED: Only check for duplicates within the SAME calendar
+            # Multi-calendar events are legitimate and should not be considered duplicates
+            # unless they are truly identical events created from the same source
+            if existing_event.calendar_id != calendar_id:
+                # Skip cross-calendar duplicate checking - events can legitimately exist in both calendars
                 continue
             
             # Check date match (same day)
@@ -160,7 +162,7 @@ class GlobalEventCache:
             if existing_event.normalized_title == normalized_title:
                 return True
             
-            # Method 2: Keyword overlap for same date
+            # Method 2: Keyword overlap for same date (reduced threshold for same calendar)
             if len(keywords.intersection(existing_event.keywords)) >= 2:
                 return True
             
@@ -179,8 +181,38 @@ class GlobalEventCache:
     
     def _is_global_event(self, keywords: Set[str]) -> bool:
         """Check if event should apply to all calendars"""
-        global_keywords = {'feriado', 'vacaciones', 'suspension', 'familia'}
+        # School-wide events that legitimately appear in multiple calendars
+        global_keywords = {
+            'feriado', 'vacaciones', 'suspension', 'familia',
+            'after', 'school', 'academias', 'reunion', 'evaluacion',
+            'actividad', 'celebracion', 'laboratorio', 'ciencias'
+        }
         return bool(keywords.intersection(global_keywords))
+    
+    def should_exist_in_both_calendars(self, title: str) -> bool:
+        """
+        Check if an event should legitimately exist in both calendars
+        Used to identify events that were incorrectly deleted due to over-aggressive duplicate detection
+        """
+        title_lower = title.lower()
+        
+        # School-wide activities that should appear in both calendars
+        both_calendar_patterns = [
+            'dia de la familia', 'family day',
+            'after school', 'academias', 'talleres',
+            'juegos recreativos', 'recreational games',
+            'juegos de rincones', 'corner games', 
+            'juegos de motricidad', 'motor skills',
+            'actividad fisica', 'physical activity',
+            'semana de las ciencias', 'science week',
+            'reunion de apoderados', 'parent meeting',
+            'vacunacion', 'vaccination',
+            'evaluacion', 'evaluation',
+            'entrega de fotografia', 'photo delivery',
+            'campana de', 'campaign'
+        ]
+        
+        return any(pattern in title_lower for pattern in both_calendar_patterns)
     
     def _calculate_similarity(self, title1: str, title2: str) -> float:
         """Calculate string similarity using word overlap"""
@@ -283,6 +315,42 @@ class GlobalEventCache:
         
         self.save_cache()
         print(f"[+] Global event cache refreshed with {len(self.events)} total events")
+    
+    def find_missing_multi_calendar_events(self, calendar_ids: List[str]) -> List[Dict]:
+        """
+        Find events that should exist in both calendars but are missing from one
+        Returns list of events that need to be restored
+        """
+        missing_events = []
+        
+        # Group events by date and normalized title
+        events_by_key = {}
+        for event in self.events.values():
+            if event.calendar_id not in calendar_ids:
+                continue
+                
+            key = f"{event.date}_{event.normalized_title}"
+            if key not in events_by_key:
+                events_by_key[key] = []
+            events_by_key[key].append(event)
+        
+        # Find events that should be in both calendars but are only in one
+        for key, events in events_by_key.items():
+            if len(events) == 1:  # Only in one calendar
+                event = events[0]
+                if self.should_exist_in_both_calendars(event.title):
+                    # This event should exist in both calendars but is missing from one
+                    missing_calendar_ids = [cid for cid in calendar_ids if cid != event.calendar_id]
+                    for missing_calendar_id in missing_calendar_ids:
+                        missing_events.append({
+                            'title': event.title,
+                            'date': event.date,
+                            'source_calendar_id': event.calendar_id,
+                            'missing_calendar_id': missing_calendar_id,
+                            'original_event_id': event.event_id
+                        })
+        
+        return missing_events
     
     def get_cache_stats(self) -> Dict:
         """Get statistics about the cache"""

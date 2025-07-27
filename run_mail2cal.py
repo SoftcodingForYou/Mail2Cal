@@ -210,6 +210,55 @@ def check_file_dependencies():
         print("  pip install pillow pytesseract")
         print("  (Also requires Tesseract binary installation)")
 
+def recover_deleted_events():
+    """Recover events that were incorrectly deleted due to over-aggressive duplicate detection"""
+    print("[*] EVENT RECOVERY - Restoring incorrectly deleted multi-calendar events")
+    print("=" * 60)
+    
+    try:
+        from utils.recover_deleted_events import main as recovery_main
+        recovery_main()
+    except ImportError:
+        print("[!] Recovery module not found")
+    except Exception as e:
+        print(f"[!] Error during recovery: {e}")
+
+def cleanup_teacher_events_dry_run():
+    """Clean up misrouted teacher events (dry run)"""
+    print("[*] TEACHER EVENT CLEANUP (DRY RUN) - Finding misrouted events")
+    print("=" * 60)
+    
+    try:
+        from utils.detect_all_misrouted_events import ComprehensiveMisrouteDetector
+        detector = ComprehensiveMisrouteDetector()
+        detector.run_analysis(days_back=30, dry_run=True)
+    except ImportError:
+        print("[!] Teacher cleanup tool not available")
+    except Exception as e:
+        print(f"[!] Error during cleanup: {e}")
+
+def cleanup_teacher_events_live():
+    """Clean up misrouted teacher events (live mode)"""
+    print("[*] TEACHER EVENT CLEANUP (LIVE) - Deleting misrouted events")
+    print("=" * 60)
+    print("[!] WARNING: This will permanently delete events from calendars!")
+    print("[!] Make sure to run dry-run mode first to review what will be deleted.")
+    print()
+    
+    try:
+        response = input("Are you sure you want to proceed? Type 'DELETE' to confirm: ").strip()
+        if response != 'DELETE':
+            print("[!] Cleanup cancelled")
+            return
+            
+        from utils.detect_all_misrouted_events import ComprehensiveMisrouteDetector
+        detector = ComprehensiveMisrouteDetector()
+        detector.run_analysis(days_back=30, dry_run=False)
+    except ImportError:
+        print("[!] Teacher cleanup tool not available")
+    except Exception as e:
+        print(f"[!] Error during cleanup: {e}")
+
 def run_full_system():
     """Run the complete Mail2Cal system"""
     # Get email count dynamically
@@ -256,6 +305,7 @@ Examples:
   python run_mail2cal.py --cleanup           # Clean up duplicate calendar events
   python run_mail2cal.py --check             # View current calendar events
   python run_mail2cal.py --full              # Process all emails with AI
+  python run_mail2cal.py --recover-events    # Recover deleted multi-calendar events
   python run_mail2cal.py                     # Interactive mode (default)
         """
     )
@@ -276,6 +326,8 @@ Examples:
                        help='List all processed files and their status')
     parser.add_argument('--check-file-deps', action='store_true',
                        help='Check file processing dependencies')
+    parser.add_argument('--recover-events', action='store_true',
+                       help='Recover incorrectly deleted multi-calendar events')
     parser.add_argument('--limit', type=int, default=3,
                        help='Number of emails for test mode (default: 3)')
     
@@ -298,6 +350,8 @@ Examples:
         list_files()
     elif args.check_file_deps:
         check_file_dependencies()
+    elif args.recover_events:
+        recover_deleted_events()
     else:
         # Interactive mode
         interactive_mode()
@@ -318,12 +372,15 @@ Select an option:
 6. Process local files (PDFs and images)
 7. List processed files
 8. Check file processing dependencies
-9. Exit
+9. Recover deleted multi-calendar events
+10. Clean up misrouted teacher events (dry-run)
+11. Clean up misrouted teacher events (LIVE - deletes events)
+12. Exit
 
 """)
     
     try:
-        choice = input("Enter choice (1-9): ").strip()
+        choice = input("Enter choice (1-12): ").strip()
         
         if choice == '1':
             preview_emails()
@@ -342,10 +399,16 @@ Select an option:
         elif choice == '8':
             check_file_dependencies()
         elif choice == '9':
+            recover_deleted_events()
+        elif choice == '10':
+            cleanup_teacher_events_dry_run()
+        elif choice == '11':
+            cleanup_teacher_events_live()
+        elif choice == '12':
             print("Goodbye!")
             sys.exit(0)
         else:
-            print("Invalid choice. Please enter 1-9.")
+            print("Invalid choice. Please enter 1-12.")
             interactive_mode()
     
     except KeyboardInterrupt:
