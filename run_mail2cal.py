@@ -9,6 +9,7 @@ import argparse
 from core.mail2cal import Mail2Cal
 from utils.preview_emails import EmailPreview
 from utils.cleanup_duplicates import authenticate, find_school_events, find_duplicates, cleanup_duplicates
+from utils.cleanup_duplicates_smart import main as cleanup_duplicates_smart
 from utils.check_calendar import check_recent_events
 from processors.file_event_processor import FileEventProcessor, check_file_processing_dependencies
 
@@ -302,7 +303,7 @@ def main():
 Examples:
   python run_mail2cal.py --preview           # Preview emails without using AI tokens
   python run_mail2cal.py --test              # Test with 3 recent emails
-  python run_mail2cal.py --cleanup           # Clean up duplicate calendar events
+  python run_mail2cal.py --cleanup           # Clean up duplicate calendar events (basic)
   python run_mail2cal.py --check             # View current calendar events
   python run_mail2cal.py --full              # Process all emails with AI
   python run_mail2cal.py --recover-events    # Recover deleted multi-calendar events
@@ -315,7 +316,7 @@ Examples:
     parser.add_argument('--test', action='store_true',
                        help='Test with 3 most recent emails')
     parser.add_argument('--cleanup', action='store_true',
-                       help='Clean up duplicate calendar events')
+                       help='Clean up duplicate calendar events (basic text matching)')
     parser.add_argument('--check', action='store_true',
                        help='Check current calendar events')
     parser.add_argument('--full', action='store_true',
@@ -366,21 +367,22 @@ Select an option:
 
 1. Preview emails (no AI tokens used)
 2. Test with 3 recent emails (minimal tokens)
-3. Clean up duplicate calendar events
-4. Check current calendar events
-5. Process ALL emails (full AI processing)
-6. Process local files (PDFs and images)
-7. List processed files
-8. Check file processing dependencies
-9. Recover deleted multi-calendar events
-10. Clean up misrouted teacher events (dry-run)
-11. Clean up misrouted teacher events (LIVE - deletes events)
-12. Exit
+3. Clean up duplicate calendar events (basic)
+4. Clean up duplicate calendar events (AI-enhanced)
+5. Check current calendar events
+6. Process ALL emails (full AI processing)
+7. Process local files (PDFs and images)
+8. List processed files
+9. Check file processing dependencies
+10. Recover deleted multi-calendar events
+11. Clean up misrouted teacher events (dry-run)
+12. Clean up misrouted teacher events (LIVE - deletes events)
+13. Exit
 
 """)
     
     try:
-        choice = input("Enter choice (1-12): ").strip()
+        choice = input("Enter choice (1-13): ").strip()
         
         if choice == '1':
             preview_emails()
@@ -389,26 +391,28 @@ Select an option:
         elif choice == '3':
             cleanup_duplicates_cmd()
         elif choice == '4':
-            check_calendar()
+            cleanup_duplicates_smart()
         elif choice == '5':
-            run_full_system()
+            check_calendar()
         elif choice == '6':
-            process_files()
+            run_full_system()
         elif choice == '7':
-            list_files()
+            process_files()
         elif choice == '8':
-            check_file_dependencies()
+            list_files()
         elif choice == '9':
-            recover_deleted_events()
+            check_file_dependencies()
         elif choice == '10':
-            cleanup_teacher_events_dry_run()
+            recover_deleted_events()
         elif choice == '11':
-            cleanup_teacher_events_live()
+            cleanup_teacher_events_dry_run()
         elif choice == '12':
+            cleanup_teacher_events_live()
+        elif choice == '13':
             print("Goodbye!")
             sys.exit(0)
         else:
-            print("Invalid choice. Please enter 1-12.")
+            print("Invalid choice. Please enter 1-13.")
             interactive_mode()
     
     except KeyboardInterrupt:
