@@ -51,6 +51,7 @@ from googleapiclient.errors import HttpError
 
 from .ai_parser import AIEmailParser
 from .event_tracker import EventTracker
+from .smart_event_merger import SmartEventMerger
 from processors.pdf_attachment_processor import PDFAttachmentProcessor
 from .global_event_cache import GlobalEventCache
 
@@ -108,6 +109,7 @@ class Mail2Cal:
         self.calendar_service = None
         self.ai_parser = AIEmailParser(self.config)
         self.event_tracker = EventTracker(self.config['event_tracking']['storage_file'])
+        self.smart_merger = SmartEventMerger(self.config['ai_service'], self.event_tracker)
         self.global_cache = GlobalEventCache()
         self.pdf_processor = None  # Will be initialized after Gmail service is ready
         
@@ -757,6 +759,16 @@ class Mail2Cal:
                 
                 print(f"[+] Found {len(events)} event(s)")
                 
+                # Add source email info to events for smart merging
+                for event in events:
+                    event['source_email_subject'] = email.get('subject', '')
+                    event['source_email_sender'] = email.get('sender', '')
+                    event['source_email_date'] = email.get('date', '')
+                
+                # ENHANCED: Use AI-powered smart duplicate detection and merging
+                print("[AI] Checking for potential duplicate events across all emails...")
+                potential_duplicates = self.smart_merger.find_potential_duplicates(events, email)
+                
                 # Handle existing vs new events with smart duplicate detection
                 calendar_event_ids = []
                 
@@ -766,17 +778,40 @@ class Mail2Cal:
                 
                 print(f"[*] Target calendars: {len(target_calendars)} ({'Calendar 1 only' if len(target_calendars) == 1 and target_calendars[0] == self.config['calendars']['calendar_id_1'] else 'Calendar 2 only' if len(target_calendars) == 1 else 'Both calendars'})")
                 
-                # Always check for similar existing events first (regardless of email processing status)
+                # Process potential duplicates first
+                processed_events = set()
+                for duplicate_info in potential_duplicates:
+                    if duplicate_info['action'] == 'merge' or self.smart_merger.should_auto_merge(duplicate_info):
+                        print(f"[MERGE] Auto-merging duplicate event: {duplicate_info['new_event'].get('summary', 'Untitled')[:50]}...")
+                        merged_event_id = self.smart_merger.merge_events(duplicate_info, self.calendar_service, self.config)
+                        if merged_event_id:
+                            calendar_event_ids.append(merged_event_id)
+                            stats['updated_events'] += 1
+                            # Mark this event as processed
+                            new_event_signature = self.event_tracker.generate_event_signature(duplicate_info['new_event'])
+                            processed_events.add(new_event_signature)
+                        else:
+                            stats['errors'] += 1
+                    else:
+                        print(f"[REVIEW] Potential duplicate found (similarity: {duplicate_info['similarity_score']:.2f}): {duplicate_info['new_event'].get('summary', 'Untitled')[:50]}...")
+                        print(f"         Manual review recommended - creating as separate event for now")
+                
+                # Always check for similar existing events using old method as fallback
                 similar_events = self.event_tracker.find_similar_events(events)
                 
                 for event in events:
                     event_signature = self.event_tracker.generate_event_signature(event)
                     
+                    # Skip events that were already processed by smart merger
+                    if event_signature in processed_events:
+                        print(f"[SKIP] Event already processed by smart merger: {event.get('summary', 'Untitled')[:50]}...")
+                        continue
+                    
                     # Process event for each target calendar
                     for calendar_id in target_calendars:
                         calendar_name = "Calendar 1 (Class A)" if calendar_id == self.config['calendars']['calendar_id_1'] else "Calendar 2 (Class B)"
                         
-                        # Check if we have a similar event already
+                        # Check if we have a similar event already (fallback method)
                         if event_signature in similar_events:
                             # Update existing similar event
                             existing_event_id = similar_events[event_signature]

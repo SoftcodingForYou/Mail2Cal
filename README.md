@@ -99,9 +99,31 @@ The system automatically routes emails to appropriate calendars:
 - **Teacher 3 & 4 emails (Afterschool)** → Both calendars (1:00 PM default timing)
 - **Other school emails** → Both calendars (all-day events)
 
+## 🧠 AI-Powered Smart Event Merging
+
+The system now includes intelligent duplicate detection and event merging across different emails:
+
+### 🎯 **What It Solves:**
+- Prevents duplicate events from different emails about the same activity
+- Combines information from multiple sources into comprehensive events
+- Example: "Día de la Familia" from multiple teacher emails → One merged event
+
+### 🤖 **How It Works:**
+1. **AI Analysis**: Uses Claude to analyze semantic similarity between events
+2. **Smart Detection**: Compares events across ALL emails, not just within single emails
+3. **Automatic Merging**: Auto-merges events with >85% similarity from same sender
+4. **Information Enrichment**: Combines descriptions, requirements, and details
+5. **Audit Trail**: Tracks which emails contributed to each merged event
+
+### 🚀 **Benefits:**
+- **Eliminates duplicates** while preserving all information
+- **Reduces calendar clutter** with smarter event consolidation
+- **Works automatically** during normal email processing
+- **Maintains source tracking** for complete transparency
+
 ## 📄 PDF Attachment Processing
 
-The system now automatically processes PDF attachments containing important school information:
+The system automatically processes PDF attachments containing important school information:
 
 ### 🔍 **What PDFs are Processed:**
 - Holiday calendars and exceptional days off

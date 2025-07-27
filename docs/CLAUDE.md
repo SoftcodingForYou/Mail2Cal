@@ -13,6 +13,7 @@ Mail2Cal/
 │   ├── mail2cal.py                    # Main Mail2Cal class
 │   ├── ai_parser.py                   # Claude AI integration
 │   ├── event_tracker.py               # Event tracking system
+│   ├── smart_event_merger.py          # AI-powered cross-email event merging
 │   └── global_event_cache.py          # Smart duplicate prevention
 │
 ├── ⚙️ processors/                     # Content Processors
@@ -26,6 +27,7 @@ Mail2Cal/
 ├── 🛠️ utils/                          # Utility Scripts
 │   ├── preview_emails.py              # Preview emails (no AI tokens)
 │   ├── cleanup_duplicates.py          # Remove duplicate events
+│   ├── test_smart_merger.py           # Test AI-powered event merging
 │   └── check_calendar.py              # View calendar events
 │
 ├── 📂 local_resources/                # File Processing Directory
@@ -64,9 +66,29 @@ python run_mail2cal.py --preview
 # Test with 3 recent emails (minimal tokens)
 python run_mail2cal.py --test
 
-# Process all emails with AI (full system)
+# Process all emails with AI (full system) - INCLUDES SMART MERGING
 python run_mail2cal.py --full
 ```
+
+### 4. Smart Event Merging
+The AI-powered smart merger automatically activates during email processing:
+
+```bash
+# Run email processing (option 5) to activate smart merging
+python run_mail2cal.py
+# Choose option 5: Process ALL emails
+
+# Smart merger output examples:
+[AI] Checking for potential duplicate events across all emails...
+[MERGE] Auto-merging duplicate event: Día de la Familia...
+[REVIEW] Potential duplicate found (similarity: 0.78): Reunión de Apoderados...
+```
+
+**What you'll see during merging:**
+- `[MERGE]` - Events automatically merged (>85% similarity)
+- `[REVIEW]` - Potential duplicates flagged for manual review (70-85% similarity)
+- `[SKIP]` - Events already processed by smart merger
+- Combined event descriptions with source tracking
 
 ## Key Features
 
@@ -95,6 +117,15 @@ python run_mail2cal.py --full
 - **Updates** existing events when email content changes
 - **Prevents** duplicate events through intelligent matching
 - **Deletes** obsolete events when no longer relevant
+
+### 🧠 AI-Powered Cross-Email Event Merging
+- **Semantic Analysis**: Uses Claude AI to detect duplicate events across different emails
+- **Smart Merging**: Automatically combines events about the same activity from multiple sources
+- **Information Enrichment**: Merges descriptions, requirements, and details into comprehensive events
+- **Auto-Decision**: Events with >85% similarity from same sender merge automatically
+- **Manual Review**: Events with 70-85% similarity flagged for review
+- **Audit Trail**: Tracks all source emails that contributed to merged events
+- **Example**: Multiple "Día de la Familia" emails → One comprehensive merged event
 
 ### 🔒 Secure Credential Management
 - Google Sheets integration for secure credential storage
