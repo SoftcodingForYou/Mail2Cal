@@ -91,10 +91,11 @@ def find_school_events(service):
     return all_mail2cal_events
 
 def find_duplicates(events):
-    """Find duplicate events using enhanced logic with email/file ID comparison (WITHIN SAME CALENDAR ONLY)"""
+    """Find duplicate events using enhanced logic with email/file ID comparison (WITHIN SAME CALENDAR AND SAME DAY ONLY)"""
     print("[*] Analyzing for duplicates with enhanced email/file ID logic...")
-    print("[!] IMPORTANT: Only detecting duplicates WITHIN the same calendar")
+    print("[!] IMPORTANT: Only detecting duplicates WITHIN the same calendar AND same day")
     print("[!] Cross-calendar events are intentional and will be preserved")
+    print("[!] Events from same email/file on DIFFERENT days are NOT duplicates")
     
     # Group events by calendar first to ensure we only find duplicates within the same calendar
     events_by_calendar = {}
@@ -122,8 +123,14 @@ def find_duplicates(events):
             start = event.get('start', {})
             extended_props = event.get('extendedProperties', {}).get('private', {})
             
-            # Get date (handle both date and dateTime)
-            date_key = start.get('date') or start.get('dateTime', '')[:10]
+            # Get date (handle both date and dateTime) - Fixed to prevent empty date grouping
+            date_key = start.get('date')
+            if not date_key and start.get('dateTime'):
+                date_key = start.get('dateTime')[:10]
+            if not date_key:
+                # Skip events without valid dates to prevent incorrect grouping
+                print(f"    [!] Warning: Event '{event.get('summary', 'Unknown')}' has no valid date, skipping duplicate detection")
+                continue
             
             # Extract email/file IDs from extended properties
             source_email_id = extended_props.get('mail2cal_source_email_id', '')
@@ -131,12 +138,15 @@ def find_duplicates(events):
             # Create basic duplicate detection key
             basic_key = f"{title}_{date_key}"
             
-            # Enhanced duplicate detection: Group by email/file ID first (within this calendar)
+            # Enhanced duplicate detection: Group by email/file ID + SAME DATE (within this calendar)
             if source_email_id:
                 email_key = f"email_{source_email_id}_{date_key}"
                 if email_key not in email_id_groups:
                     email_id_groups[email_key] = []
                 email_id_groups[email_key].append(event)
+                # Debug logging for email grouping
+                if len(email_id_groups[email_key]) > 1:
+                    print(f"    [DEBUG] Found potential duplicate: Email ID {source_email_id}, Date {date_key}, Events: {len(email_id_groups[email_key])}")
             
             # Also maintain basic title+date grouping for events without email IDs (within this calendar)
             if basic_key not in duplicates:
@@ -150,7 +160,20 @@ def find_duplicates(events):
             if len(email_events) > 1:
                 # Same email ID with same date = definite duplicates WITHIN SAME CALENDAR
                 source_email_id = email_events[0].get('extendedProperties', {}).get('private', {}).get('mail2cal_source_email_id', '')
-                print(f"  - Email ID {source_email_id}: {len(email_events)} duplicate events found IN SAME CALENDAR")
+                # Extract date from email_key for verification
+                date_from_key = email_key.split('_')[-1]
+                print(f"  - Email ID {source_email_id}: {len(email_events)} duplicate events found IN SAME CALENDAR on date {date_from_key}")
+                
+                # Verify all events are actually on the same date
+                dates_in_group = set()
+                for event in email_events:
+                    start = event.get('start', {})
+                    event_date = start.get('date') or (start.get('dateTime', '')[:10] if start.get('dateTime') else '')
+                    dates_in_group.add(event_date)
+                
+                if len(dates_in_group) > 1:
+                    print(f"    [!] WARNING: Email group contains events from different dates: {dates_in_group}")
+                    continue  # Skip this group if dates don't match
                 
                 # Group by title within same email ID for granular control
                 title_groups = {}
@@ -180,10 +203,10 @@ def find_duplicates(events):
                     print(f"  - Basic match {basic_key}: {len(events_without_email_id)} duplicate events without email IDs IN SAME CALENDAR")
                     actual_duplicates[f"{calendar_id}_basic_{basic_key}"] = events_without_email_id
     
-    print(f"\n[+] Enhanced duplicate detection complete (same-calendar only):")
+    print(f"\n[+] Enhanced duplicate detection complete (same-calendar AND same-day only):")
     print(f"    Total duplicate groups found: {len(actual_duplicates)}")
-    print(f"    Email/File ID duplicates: {len([k for k in actual_duplicates.keys() if '_email_' in k])}")
-    print(f"    Basic title+date duplicates: {len([k for k in actual_duplicates.keys() if '_basic_' in k])}")
+    print(f"    Email/File ID duplicates (same day): {len([k for k in actual_duplicates.keys() if '_email_' in k])}")
+    print(f"    Basic title+date duplicates (same day): {len([k for k in actual_duplicates.keys() if '_basic_' in k])}")
     
     for key, duplicate_events in actual_duplicates.items():
         # Show more detailed info about duplicates
@@ -280,9 +303,11 @@ def main():
     print("[*] Advanced features used:")
     print("    ✓ Online calendar event lookup across both calendars")
     print("    ✓ Email/File ID comparison for accurate duplicate detection")
-    print("    ✓ Same-calendar-only duplicate detection (cross-calendar events preserved)")
+    print("    ✓ Same-calendar AND same-day duplicate detection only")
     print("    ✓ Multi-calendar cleanup support")
+    print("    ✓ Events from same email/file on DIFFERENT days preserved")
     print("[!] IMPORTANT: Cross-calendar events were intentionally preserved")
+    print("[!] IMPORTANT: Events from same source on different days were preserved")
     print("[*] You can now run the full Mail2Cal system")
 
 if __name__ == "__main__":
