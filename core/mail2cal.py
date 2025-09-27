@@ -689,8 +689,14 @@ class Mail2Cal:
             return True
             
         except HttpError as error:
-            print(f'[-] Error deleting calendar event: {error}')
-            return False
+            # 404 (Not Found) and 410 (Resource has been deleted) are considered successful
+            # since the event is already gone from the calendar
+            if error.resp.status in [404, 410]:
+                print(f"[+] Event already deleted: {event_id} (status: {error.resp.status})")
+                return True
+            else:
+                print(f'[-] Error deleting calendar event: {error}')
+                return False
     
     def run(self, days_back: int = None):
         """Main execution method with intelligent processing"""
@@ -725,7 +731,13 @@ class Mail2Cal:
         # Process each email
         for i, email in enumerate(emails, 1):
             print(f"\n[{i}/{len(emails)}] Processing: {email['subject'][:60]}...")
-            
+
+            # Skip emails with specific subjects that should be ignored
+            if email.get('subject', '').strip() == "Alerta de Inasistencia a Clases":
+                print(f"[>] Skipping ignored email subject: {email['subject']}")
+                stats['skipped'] += 1
+                continue
+
             try:
                 # Check if email needs processing
                 email_processed = self.event_tracker.is_email_processed(email)
