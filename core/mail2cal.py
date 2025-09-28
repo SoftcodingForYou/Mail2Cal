@@ -215,7 +215,9 @@ class Mail2Cal:
                 if self.pdf_processor.has_pdf_attachments(message):
                     has_attachments = True
                     attachment_summary = self.pdf_processor.get_attachment_summary(message)
-                    print(f"[📎] {attachment_summary}")
+                    # Clean the summary for safe printing
+                    safe_summary = attachment_summary.encode('ascii', errors='replace').decode('ascii')
+                    print(f"[PDF] {safe_summary}")
                     
                     # Create email dict first for processing
                     email_data = {
@@ -777,21 +779,23 @@ class Mail2Cal:
                     event['source_email_sender'] = email.get('sender', '')
                     event['source_email_date'] = email.get('date', '')
                 
-                # ENHANCED: Use AI-powered smart duplicate detection and merging
-                print("[AI] Checking for potential duplicate events across all emails...")
+                # UNIFIED: Use AI-powered smart duplicate detection with 2-week window
+                print("[AI] Checking for potential duplicate events (2-week window from today)...")
                 potential_duplicates = self.smart_merger.find_potential_duplicates(events, email)
-                
-                # Handle existing vs new events with smart duplicate detection
+
+                # Handle existing vs new events with unified duplicate detection
                 calendar_event_ids = []
-                
+
                 # Determine target calendars based on sender
                 target_calendars = self.get_target_calendars(email)
                 sender_name = email.get('sender', '').split('<')[0].strip()
-                
+
                 print(f"[*] Target calendars: {len(target_calendars)} ({'Calendar 1 only' if len(target_calendars) == 1 and target_calendars[0] == self.config['calendars']['calendar_id_1'] else 'Calendar 2 only' if len(target_calendars) == 1 else 'Both calendars'})")
-                
-                # Process potential duplicates first
+
+                # Process events with unified duplicate detection
                 processed_events = set()
+
+                # First pass: Handle AI-detected duplicates (high confidence)
                 for duplicate_info in potential_duplicates:
                     if duplicate_info['action'] == 'merge' or self.smart_merger.should_auto_merge(duplicate_info):
                         print(f"[MERGE] Auto-merging duplicate event: {duplicate_info['new_event'].get('summary', 'Untitled')[:50]}...")
@@ -804,41 +808,43 @@ class Mail2Cal:
                             processed_events.add(new_event_signature)
                         else:
                             stats['errors'] += 1
-                    else:
+                    elif duplicate_info['similarity_score'] > 0.7:
                         print(f"[REVIEW] Potential duplicate found (similarity: {duplicate_info['similarity_score']:.2f}): {duplicate_info['new_event'].get('summary', 'Untitled')[:50]}...")
-                        print(f"         Manual review recommended - creating as separate event for now")
-                
-                # Always check for similar existing events using old method as fallback
+                        print(f"         Creating as separate event - manual review recommended")
+                        # Don't mark as processed, let it be created as new event
+
+                # Fallback: Use legacy signature-based matching for events not handled by AI
                 similar_events = self.event_tracker.find_similar_events(events)
                 
+                # Second pass: Process remaining events (not handled by AI merger)
                 for event in events:
                     event_signature = self.event_tracker.generate_event_signature(event)
-                    
+
                     # Skip events that were already processed by smart merger
                     if event_signature in processed_events:
-                        print(f"[SKIP] Event already processed by smart merger: {event.get('summary', 'Untitled')[:50]}...")
+                        print(f"[SKIP] Event already processed by AI merger: {event.get('summary', 'Untitled')[:50]}...")
                         continue
-                    
+
                     # Process event for each target calendar
                     for calendar_id in target_calendars:
                         calendar_name = "Calendar 1 (Class A)" if calendar_id == self.config['calendars']['calendar_id_1'] else "Calendar 2 (Class B)"
-                        
-                        # Check if we have a similar event already (fallback method)
+
+                        # Check legacy signature-based duplicates (fallback only)
                         if event_signature in similar_events:
-                            # Update existing similar event
+                            # Update existing similar event (legacy method)
                             existing_event_id = similar_events[event_signature]
-                            print(f"[~] Updating existing event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
+                            print(f"[LEGACY] Updating existing event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
                             if self.update_calendar_event(existing_event_id, event, calendar_id):
                                 calendar_event_ids.append(existing_event_id)
                                 stats['updated_events'] += 1
-                                
+
                                 # Update the tracking for this event
                                 self.event_tracker.update_event_mapping(email, existing_event_id, existing_event_id, event)
                             else:
                                 stats['errors'] += 1
                         else:
-                            # Create new event (no similar event found)
-                            print(f"[+] Creating new event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
+                            # Create new event (no duplicates found by any method)
+                            print(f"[NEW] Creating new event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
                             event_id = self.create_calendar_event(event, calendar_id)
                             if event_id:
                                 calendar_event_ids.append(event_id)

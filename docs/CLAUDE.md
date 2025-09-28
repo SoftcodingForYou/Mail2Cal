@@ -341,12 +341,41 @@ local_resources/
 - **Calendar API**: Create/update/delete events only
 - **Anthropic API**: Send email content for analysis only
 
+## Development Guidelines
+
+### Code Standards
+- **Unicode Safety**: Avoid emojis and special Unicode characters in Python print statements
+  - ❌ Don't use: `print(f"[📎] Processing...")`
+  - ✅ Use instead: `print(f"[PDF] Processing...")`
+  - **Reason**: Unicode characters cause encoding errors on Windows systems (cp1252 codec issues)
+  - **Solution**: Use ASCII-safe characters and text descriptions instead of emojis
+
+- **Error Handling**: Always handle Unicode in user-facing content:
+  ```python
+  # Safe printing of potentially Unicode content
+  safe_text = text.encode('ascii', errors='replace').decode('ascii')
+  print(f"[INFO] {safe_text}")
+  ```
+
+- **Attachment Processing**: Use Unicode-safe text cleaning for extracted content:
+  ```python
+  def _clean_unicode_text(self, text: str) -> str:
+      # Replace problematic Unicode characters with ASCII equivalents
+      # Remove emoji and high Unicode characters that cause encoding issues
+  ```
+
+### Testing Guidelines
+- Test on Windows systems to catch Unicode encoding issues early
+- Verify all print statements work with special characters in content
+- Test PDF processing with files containing Unicode characters
+
 ## Current Status
 
-✅ **Multi-Calendar System**: Teacher-based routing operational  
-✅ **PDF Processing**: Automatic attachment processing enabled  
-✅ **Secure Credentials**: Google Sheets integration active  
-✅ **Smart Timing**: Default time assignment based on sender type  
-✅ **Clean Repository**: Only essential files remain  
+✅ **Multi-Calendar System**: Teacher-based routing operational
+✅ **PDF Processing**: Automatic attachment processing enabled (Unicode-safe)
+✅ **Secure Credentials**: Google Sheets integration active
+✅ **Smart Timing**: Default time assignment based on sender type
+✅ **Unicode Safety**: All print statements and text processing Unicode-safe
+✅ **Clean Repository**: Only essential files remain
 
 The Mail2Cal system is fully operational and ready for production use.

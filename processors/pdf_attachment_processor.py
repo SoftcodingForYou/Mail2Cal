@@ -69,11 +69,12 @@ class PDFAttachmentProcessor:
             if not pdf_attachments:
                 return enhanced_content
             
-            print(f"[📎] Found {len(pdf_attachments)} PDF attachment(s)")
-            
+            print(f"[PDF] Found {len(pdf_attachments)} PDF attachment(s)")
+
             # Process each PDF attachment
             for i, attachment_info in enumerate(pdf_attachments, 1):
-                print(f"[📄] Processing PDF {i}/{len(pdf_attachments)}: {attachment_info['filename']}")
+                safe_filename = attachment_info['filename'].encode('ascii', errors='replace').decode('ascii')
+                print(f"[PDF] Processing PDF {i}/{len(pdf_attachments)}: {safe_filename}")
                 
                 # Download and extract text
                 pdf_text = self._download_and_extract_pdf(
@@ -83,12 +84,15 @@ class PDFAttachmentProcessor:
                 )
                 
                 if pdf_text:
-                    enhanced_content += f"\n\n=== CONTENIDO DEL ARCHIVO PDF: {attachment_info['filename']} ===\n"
+                    # Clean filename for safe display
+                    safe_filename = attachment_info['filename'].encode('ascii', errors='replace').decode('ascii')
+                    enhanced_content += f"\n\n=== CONTENIDO DEL ARCHIVO PDF: {safe_filename} ===\n"
                     enhanced_content += pdf_text
                     enhanced_content += f"\n=== FIN DEL ARCHIVO PDF ===\n"
                     print(f"[+] Successfully extracted {len(pdf_text)} characters from PDF")
                 else:
-                    print(f"[-] Failed to extract text from {attachment_info['filename']}")
+                    safe_filename = attachment_info['filename'].encode('ascii', errors='replace').decode('ascii')
+                    print(f"[-] Failed to extract text from {safe_filename}")
             
             return enhanced_content
             
@@ -204,43 +208,90 @@ class PDFAttachmentProcessor:
     def _extract_with_pdfplumber(self, pdf_path: str) -> str:
         """Extract text using pdfplumber (best for tables)"""
         text_content = []
-        
+
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
                 # Extract tables first (better structure preservation)
                 tables = page.extract_tables()
                 if tables:
-                    text_content.append(f"\n--- PÁGINA {page_num} (TABLAS) ---")
+                    text_content.append(f"\n--- PAGINA {page_num} (TABLAS) ---")
                     for table_num, table in enumerate(tables, 1):
                         text_content.append(f"\nTabla {table_num}:")
                         for row in table:
                             if row:  # Skip empty rows
-                                row_text = " | ".join([cell or "" for cell in row])
+                                # Clean and sanitize cell content
+                                clean_cells = []
+                                for cell in row:
+                                    if cell:
+                                        # Remove problematic Unicode characters
+                                        clean_cell = self._clean_unicode_text(str(cell))
+                                        clean_cells.append(clean_cell)
+                                    else:
+                                        clean_cells.append("")
+                                row_text = " | ".join(clean_cells)
                                 text_content.append(row_text)
-                
+
                 # Extract regular text
                 page_text = page.extract_text()
                 if page_text:
-                    text_content.append(f"\n--- PÁGINA {page_num} (TEXTO) ---")
-                    text_content.append(page_text)
-        
+                    text_content.append(f"\n--- PAGINA {page_num} (TEXTO) ---")
+                    # Clean the page text to remove problematic Unicode
+                    clean_page_text = self._clean_unicode_text(page_text)
+                    text_content.append(clean_page_text)
+
         return "\n".join(text_content)
     
     def _extract_with_pymupdf(self, pdf_path: str) -> str:
         """Extract text using PyMuPDF (faster fallback)"""
         text_content = []
-        
+
         doc = fitz.open(pdf_path)
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             page_text = page.get_text()
-            
+
             if page_text.strip():
-                text_content.append(f"\n--- PÁGINA {page_num + 1} ---")
-                text_content.append(page_text)
-        
+                text_content.append(f"\n--- PAGINA {page_num + 1} ---")
+                # Clean the page text to remove problematic Unicode
+                clean_page_text = self._clean_unicode_text(page_text)
+                text_content.append(clean_page_text)
+
         doc.close()
         return "\n".join(text_content)
+
+    def _clean_unicode_text(self, text: str) -> str:
+        """Clean text to remove problematic Unicode characters that cause encoding issues"""
+        if not text:
+            return ""
+
+        # Replace common problematic Unicode characters
+        replacements = {
+            '\u2022': '•',  # Bullet point
+            '\u2013': '-',  # En dash
+            '\u2014': '--', # Em dash
+            '\u2018': "'",  # Left single quotation mark
+            '\u2019': "'",  # Right single quotation mark
+            '\u201c': '"',  # Left double quotation mark
+            '\u201d': '"',  # Right double quotation mark
+            '\u00a0': ' ',  # Non-breaking space
+            '\u00b0': '°',  # Degree symbol
+            '\u2026': '...', # Horizontal ellipsis
+        }
+
+        # Apply replacements
+        for unicode_char, replacement in replacements.items():
+            text = text.replace(unicode_char, replacement)
+
+        # Remove emoji and other high Unicode characters that cause issues
+        # Keep only ASCII and basic Latin characters
+        import re
+        text = re.sub(r'[^\x00-\x7F\u00C0-\u017F\u0100-\u024F\u1E00-\u1EFF]', '?', text)
+
+        # Clean up multiple spaces and normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+
+        return text
     
     def get_attachment_summary(self, email_message: Dict) -> str:
         """Get a summary of attachments for logging purposes"""

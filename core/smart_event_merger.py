@@ -60,36 +60,59 @@ class SmartEventMerger:
         return potential_duplicates
     
     def _get_candidate_events(self, new_event: Dict) -> List[Dict]:
-        """Get existing events that could potentially be duplicates"""
+        """Get existing events that could potentially be duplicates within a 2-week window from today"""
+        from datetime import datetime, timedelta
+
         candidates = []
         new_date = new_event.get('start_time')
-        
+
         if not new_date:
             return candidates
-        
-        # Convert to date string for comparison
+
+        # Convert to datetime for range comparison
         if isinstance(new_date, str):
-            new_date_str = new_date[:10]
+            try:
+                new_datetime = datetime.fromisoformat(new_date.replace('Z', '+00:00'))
+            except:
+                new_datetime = datetime.strptime(new_date[:10], '%Y-%m-%d')
         else:
-            new_date_str = str(new_date.date())
-        
-        # Search through all existing mappings
+            new_datetime = new_date
+
+        # Define search window: TODAY to 2 weeks from now
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        two_weeks_future = today + timedelta(weeks=2)
+
+        # Search through existing mappings within the time window
         for email_id, mapping in self.event_tracker.mappings.items():
             for stored_event in mapping['calendar_events']:
-                stored_date = stored_event.get('start_time', '')
-                
-                if stored_date and stored_date[:10] == new_date_str:
-                    # Same date - potential duplicate
-                    candidates.append({
-                        'event_data': stored_event,
-                        'source_email': {
-                            'id': email_id,
-                            'subject': mapping.get('email_subject', ''),
-                            'sender': mapping.get('email_sender', ''),
-                            'date': mapping.get('email_date', '')
-                        }
-                    })
-        
+                stored_date_str = stored_event.get('start_time', '')
+
+                if not stored_date_str:
+                    continue
+
+                try:
+                    # Parse stored event date
+                    if 'T' in stored_date_str:
+                        stored_datetime = datetime.fromisoformat(stored_date_str.replace('Z', '+00:00'))
+                    else:
+                        stored_datetime = datetime.strptime(stored_date_str[:10], '%Y-%m-%d')
+
+                    # Check if within our 2-week window from today
+                    if today <= stored_datetime <= two_weeks_future:
+                        candidates.append({
+                            'event_data': stored_event,
+                            'source_email': {
+                                'id': email_id,
+                                'subject': mapping.get('email_subject', ''),
+                                'sender': mapping.get('email_sender', ''),
+                                'date': mapping.get('email_date', '')
+                            }
+                        })
+
+                except (ValueError, TypeError):
+                    # Skip events with invalid date formats
+                    continue
+
         return candidates
     
     def _analyze_event_similarity(self, new_event: Dict, candidate: Dict, source_email: Dict) -> Tuple[float, Dict]:
