@@ -98,16 +98,19 @@ class EmailPreview:
             print("[*] Fetching email details...")
             
             for i, message in enumerate(messages, 1):
-                print(f"[{i}/{len(messages)}] Processing email {message['id']}")
-                
                 # Get full message details
                 msg = self.gmail_service.users().messages().get(
                     userId=GMAIL_ADDRESS,
                     id=message['id']
                 ).execute()
-                
+
                 email_data = self._parse_email(msg)
                 emails.append(email_data)
+
+                # Show progress with date and subject
+                email_date = email_data.get('date', 'No date')[:16]  # First 16 chars of date
+                email_subject = email_data.get('subject', 'No subject')[:50]  # First 50 chars
+                print(f"[{i}/{len(messages)}] {email_date} - {email_subject}")
             
             return emails
             

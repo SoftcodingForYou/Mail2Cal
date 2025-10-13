@@ -180,15 +180,23 @@ class Mail2Cal:
             
             messages = result.get('messages', [])
             emails = []
-            
-            for message in messages:
+
+            print("[*] Fetching email details...")
+            for i, message in enumerate(messages, 1):
                 # Get full message details
                 msg = self.gmail_service.users().messages().get(
                     userId=self.config['gmail']['user_id'],
                     id=message['id']
                 ).execute()
-                
-                emails.append(self._parse_email(msg))
+
+                # Parse the email to get subject and date
+                parsed_email = self._parse_email(msg)
+                emails.append(parsed_email)
+
+                # Show progress with date and subject
+                email_date = parsed_email.get('date', 'No date')[:16]  # First 16 chars of date
+                email_subject = parsed_email.get('subject', 'No subject')[:50]  # First 50 chars
+                print(f"[{i}/{len(messages)}] {email_date} - {email_subject}")
             
             return emails
             

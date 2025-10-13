@@ -213,14 +213,19 @@ Respond with JSON only:
     
     def _create_merged_event(self, new_event: Dict, existing_info: Dict, merge_strategy: Dict) -> Dict:
         """Create a merged event with combined information"""
+        from datetime import datetime, timedelta
         existing_event = existing_info['event_data']
-        
+
+        # Determine time format from existing event (preserve it to avoid API errors)
+        # Google Calendar API requires: both date OR both dateTime, not mixed
+        start_format, end_format = self._get_event_time_format(new_event, existing_event, merge_strategy)
+
         # Start with existing event structure
         merged = {
             'summary': self._merge_titles(new_event, existing_event, merge_strategy),
             'description': self._merge_descriptions(new_event, existing_event, existing_info, merge_strategy),
-            'start': new_event.get('start', {}),
-            'end': new_event.get('end', {}),
+            'start': start_format,
+            'end': end_format,
             'location': new_event.get('location', existing_event.get('location', '')),
             'extendedProperties': {
                 'private': {
@@ -231,8 +236,74 @@ Respond with JSON only:
                 }
             }
         }
-        
+
         return merged
+
+    def _get_event_time_format(self, new_event: Dict, existing_event: Dict, merge_strategy: Dict) -> tuple:
+        """Get properly formatted start/end times that match (both date OR both dateTime)"""
+        from datetime import datetime, timedelta
+
+        # Decide which event's timing to use based on strategy
+        preferred_time = merge_strategy.get('merge_strategy', {}).get('preferred_time', 'event2')
+
+        # Choose source event for timing
+        if preferred_time == 'event1':
+            source_event = new_event
+        else:
+            # Default to existing event to preserve original timing
+            source_event = existing_event
+
+        # Check if source event uses all_day format
+        is_all_day = source_event.get('all_day', False)
+
+        # Get start and end times
+        start_time = source_event.get('start_time')
+        end_time = source_event.get('end_time')
+
+        if is_all_day:
+            # All-day event: both must use 'date' format
+            if isinstance(start_time, str):
+                start_date = start_time[:10]  # YYYY-MM-DD
+            elif hasattr(start_time, 'date'):
+                start_date = start_time.date().isoformat()
+            else:
+                start_date = datetime.now().date().isoformat()
+
+            # End date is start + 1 day for all-day events
+            end_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date() + timedelta(days=1)
+            end_date = end_date_obj.isoformat()
+
+            return (
+                {'date': start_date},
+                {'date': end_date}
+            )
+        else:
+            # Timed event: both must use 'dateTime' format
+            if isinstance(start_time, str):
+                start_dt = start_time
+            elif hasattr(start_time, 'isoformat'):
+                start_dt = start_time.isoformat()
+            else:
+                start_dt = datetime.now().isoformat()
+
+            if end_time:
+                if isinstance(end_time, str):
+                    end_dt = end_time
+                elif hasattr(end_time, 'isoformat'):
+                    end_dt = end_time.isoformat()
+                else:
+                    # Default to 1 hour after start
+                    start_datetime = datetime.fromisoformat(start_dt.replace('Z', '+00:00'))
+                    end_dt = (start_datetime + timedelta(hours=1)).isoformat()
+            else:
+                # Default to 1 hour after start
+                start_datetime = datetime.fromisoformat(start_dt.replace('Z', '+00:00'))
+                end_dt = (start_datetime + timedelta(hours=1)).isoformat()
+
+            return (
+                {'dateTime': start_dt, 'timeZone': 'America/Santiago'},
+                {'dateTime': end_dt, 'timeZone': 'America/Santiago'}
+            )
     
     def _merge_titles(self, new_event: Dict, existing_event: Dict, merge_strategy: Dict) -> str:
         """Merge event titles based on strategy"""
