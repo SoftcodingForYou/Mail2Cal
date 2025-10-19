@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import anthropic
 import os
+import time
 from auth.secure_credentials import get_secure_credential
 
 
@@ -117,7 +118,7 @@ class SmartEventMerger:
     
     def _analyze_event_similarity(self, new_event: Dict, candidate: Dict, source_email: Dict) -> Tuple[float, Dict]:
         """Use AI to analyze if two events are duplicates and how to merge them"""
-        
+
         prompt = f"""Analyze these two school events to determine if they represent the same real-world event:
 
 EVENT 1 (NEW):
@@ -149,30 +150,59 @@ Respond with JSON only:
     }}
 }}"""
 
-        try:
-            message = self.client.messages.create(
-                model=self.ai_config['model'],
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
-            
-            response_text = message.content[0].text.strip()
-            
-            # Parse JSON response
+        # Retry logic with exponential backoff for transient errors
+        max_retries = 10
+        base_delay = 2  # Start with 2 seconds
+
+        for attempt in range(max_retries):
             try:
-                analysis = json.loads(response_text)
-                similarity_score = analysis.get('similarity_score', 0.0)
-                return similarity_score, analysis
-            except json.JSONDecodeError:
-                print(f"[!] AI response not valid JSON: {response_text[:100]}...")
+                message = self.client.messages.create(
+                    model=self.ai_config['model'],
+                    max_tokens=1000,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt
+                    }]
+                )
+
+                response_text = message.content[0].text.strip()
+
+                # Parse JSON response
+                try:
+                    analysis = json.loads(response_text)
+                    similarity_score = analysis.get('similarity_score', 0.0)
+                    return similarity_score, analysis
+                except json.JSONDecodeError:
+                    print(f"[!] AI response not valid JSON: {response_text[:100]}...")
+                    return 0.0, {}
+
+            except anthropic.RateLimitError as e:
+                # Handle rate limit errors (429, 529)
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                    print(f"[!] API rate limit/overload (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"[!] API overloaded after {max_retries} attempts. Skipping AI analysis for this event pair.")
+                    return 0.0, {}
+
+            except anthropic.APIError as e:
+                # Handle other API errors
+                if attempt < max_retries - 1 and hasattr(e, 'status_code') and e.status_code >= 500:
+                    # Server errors - retry
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[!] API error {e.status_code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"[!] API error in AI similarity analysis: {e}")
+                    return 0.0, {}
+
+            except Exception as e:
+                print(f"[!] Error in AI similarity analysis: {e}")
                 return 0.0, {}
-                
-        except Exception as e:
-            print(f"[!] Error in AI similarity analysis: {e}")
-            return 0.0, {}
+
+        # Should not reach here, but just in case
+        return 0.0, {}
     
     def merge_events(self, duplicate_info: Dict, calendar_service, config: Dict) -> Optional[str]:
         """Merge two duplicate events into one comprehensive event"""
