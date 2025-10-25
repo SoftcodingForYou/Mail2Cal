@@ -65,11 +65,11 @@ class EmailPreview:
         """Fetch emails from school within specified date range"""
         if days_back is None:
             days_back = int(DEFAULT_MONTHS_BACK * 30)
-        
-        # Calculate date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-        
+
+        # Calculate date range (add 1 day to end_date to include emails sent today)
+        end_date = datetime.now() + timedelta(days=1)
+        start_date = end_date - timedelta(days=days_back + 1)
+
         # Format dates for Gmail API
         after_date = start_date.strftime('%Y/%m/%d')
         before_date = end_date.strftime('%Y/%m/%d')
