@@ -137,16 +137,16 @@ Consider:
 2. Do they have complementary information that should be merged?
 3. Is one more detailed/complete than the other?
 
-Respond with JSON only:
+You must respond with ONLY valid JSON in this exact format (no other text):
 {{
-    "is_duplicate": true/false,
-    "similarity_score": 0.0-1.0,
-    "reasoning": "explanation",
+    "is_duplicate": true,
+    "similarity_score": 0.85,
+    "reasoning": "brief explanation",
     "merge_strategy": {{
-        "keep_title": "event1" or "event2" or "combine",
-        "keep_description": "event1" or "event2" or "combine",
-        "combine_notes": true/false,
-        "preferred_time": "event1" or "event2" or "most_specific"
+        "keep_title": "event1",
+        "keep_description": "combine",
+        "combine_notes": true,
+        "preferred_time": "event2"
     }}
 }}"""
 
@@ -158,7 +158,7 @@ Respond with JSON only:
             try:
                 message = self.client.messages.create(
                     model=self.ai_config['model'],
-                    max_tokens=1000,
+                    max_tokens=1500,
                     messages=[{
                         "role": "user",
                         "content": prompt
@@ -167,14 +167,28 @@ Respond with JSON only:
 
                 response_text = message.content[0].text.strip()
 
+                # Try to extract JSON if response has extra text
+                # Sometimes AI adds markdown code blocks
+                if '```json' in response_text:
+                    response_text = response_text.split('```json')[1].split('```')[0].strip()
+                elif '```' in response_text:
+                    response_text = response_text.split('```')[1].split('```')[0].strip()
+
                 # Parse JSON response
                 try:
                     analysis = json.loads(response_text)
                     similarity_score = analysis.get('similarity_score', 0.0)
                     return similarity_score, analysis
-                except json.JSONDecodeError:
-                    print(f"[!] AI response not valid JSON: {response_text[:100]}...")
-                    return 0.0, {}
+                except json.JSONDecodeError as e:
+                    # Retry if this isn't the last attempt
+                    if attempt < max_retries - 1:
+                        print(f"[!] Invalid JSON (attempt {attempt + 1}/{max_retries}), retrying...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        print(f"[!] AI response not valid JSON after {max_retries} attempts")
+                        print(f"[!] Response: {response_text[:200]}...")
+                        return 0.0, {}
 
             except anthropic.RateLimitError as e:
                 # Handle rate limit errors (429, 529)
