@@ -23,7 +23,21 @@ from auth.secure_credentials import get_secure_credential
 try:
     GMAIL_ADDRESS = get_secure_credential('GMAIL_ADDRESS')
     EMAIL_SENDER_FILTER = get_secure_credential('EMAIL_SENDER_FILTER')
+    TEACHER_1_EMAIL = get_secure_credential('TEACHER_1_EMAIL')
+    TEACHER_2_EMAIL = get_secure_credential('TEACHER_2_EMAIL')
+    TEACHER_3_EMAIL = get_secure_credential('TEACHER_3_EMAIL')
+    TEACHER_4_EMAIL = get_secure_credential('TEACHER_4_EMAIL')
     DEFAULT_MONTHS_BACK = float(get_secure_credential('DEFAULT_MONTHS_BACK'))
+
+    # Build comprehensive sender filter combining wildcard and exact teacher emails
+    # Gmail's wildcard search (from:*domain*) can be slow to index recent emails from specific addresses
+    # Using exact email addresses ensures immediate search results for configured teachers
+    teacher_emails = [TEACHER_1_EMAIL, TEACHER_2_EMAIL, TEACHER_3_EMAIL, TEACHER_4_EMAIL]
+    teacher_filter = " OR ".join([f"from:{email}" for email in teacher_emails])
+    # Combine with original filter to catch both wildcards (display names) and exact addresses
+    EMAIL_SENDER_FILTER = f"({EMAIL_SENDER_FILTER} OR {teacher_filter})"
+    print(f"[+] Enhanced filter with {len(teacher_emails)} exact teacher emails")
+
 except Exception as e:
     print(f"[!] Error loading credentials: {e}")
     print("[!] Falling back to environment variables")
