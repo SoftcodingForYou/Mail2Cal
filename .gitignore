@@ -40,15 +40,19 @@ Thumbs.db
 *.backup
 *~
 
-# Development/Test Files (prevent clutter)
-test_*.py
-*_test.py
-debug_*.py
-experimental_*.py
-temp_*.py
-scratch_*.py
-cleanup_*.py
-fix_*.py
+# Development/Test Files (prevent clutter in root and core/)
+# Note: utils/ directory contains intentional utility scripts
+/test_*.py
+/*_test.py
+/debug_*.py
+/experimental_*.py
+/temp_*.py
+/scratch_*.py
+/cleanup_*.py
+/fix_*.py
+/core/test_*.py
+/core/*_test.py
+/core/debug_*.py
 troubleshooting/
 
 # Documentation drafts
