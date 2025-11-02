@@ -8,6 +8,7 @@ token.pickle
 event_mappings.json
 file_event_mappings.json
 global_event_cache.json
+ai_usage_log.json
 
 # Google Apps Script URL Configuration
 secure_credentials_config.py

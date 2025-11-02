@@ -3,6 +3,7 @@ AI-powered smart event merger for detecting and merging duplicate events across 
 """
 
 import json
+import re
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import anthropic
@@ -13,10 +14,11 @@ from auth.secure_credentials import get_secure_credential
 
 class SmartEventMerger:
     """Detects and merges duplicate events from different emails using AI analysis"""
-    
-    def __init__(self, ai_config: Dict, event_tracker):
+
+    def __init__(self, ai_config: Dict, event_tracker, token_tracker=None):
         self.ai_config = ai_config
         self.event_tracker = event_tracker
+        self.token_tracker = token_tracker
         self.client = self._initialize_ai_client()
     
     def _initialize_ai_client(self):
@@ -38,26 +40,34 @@ class SmartEventMerger:
     def find_potential_duplicates(self, new_events: List[Dict], source_email: Dict) -> List[Dict]:
         """Find existing events that might be duplicates of new events"""
         potential_duplicates = []
-        
+
         for new_event in new_events:
             # Get basic candidate events (same date range)
             candidates = self._get_candidate_events(new_event)
-            
-            for candidate in candidates:
-                # Use AI to determine if they're duplicates
-                similarity_score, merge_recommendation = self._analyze_event_similarity(
-                    new_event, candidate, source_email
-                )
-                
-                if similarity_score > 0.7:  # 70% similarity threshold
-                    potential_duplicates.append({
-                        'new_event': new_event,
-                        'existing_event': candidate,
-                        'similarity_score': similarity_score,
-                        'merge_recommendation': merge_recommendation,
-                        'action': 'merge' if similarity_score > 0.85 else 'review'
-                    })
-        
+
+            if not candidates:
+                continue
+
+            # BATCH PROCESSING: Compare against multiple candidates in one API call
+            # Process in batches of 5 to avoid overwhelming the prompt
+            batch_size = 5
+            for i in range(0, len(candidates), batch_size):
+                batch = candidates[i:i + batch_size]
+
+                # Analyze all candidates in this batch with a single AI call
+                batch_results = self._analyze_multiple_similarities(new_event, batch, source_email)
+
+                # Process results
+                for candidate, (similarity_score, merge_recommendation) in zip(batch, batch_results):
+                    if similarity_score > 0.7:  # 70% similarity threshold
+                        potential_duplicates.append({
+                            'new_event': new_event,
+                            'existing_event': candidate,
+                            'similarity_score': similarity_score,
+                            'merge_recommendation': merge_recommendation,
+                            'action': 'merge' if similarity_score > 0.85 else 'review'
+                        })
+
         return potential_duplicates
     
     def _get_candidate_events(self, new_event: Dict) -> List[Dict]:
@@ -115,7 +125,145 @@ class SmartEventMerger:
                     continue
 
         return candidates
-    
+
+    def _analyze_multiple_similarities(self, new_event: Dict, candidates: List[Dict], source_email: Dict) -> List[Tuple[float, Dict]]:
+        """Use AI to analyze if one new event matches multiple existing events (BATCHED)"""
+
+        # Build prompt for batch comparison
+        candidates_text = ""
+        for idx, candidate in enumerate(candidates, 1):
+            candidates_text += f"""
+CANDIDATE {idx}:
+Title: {candidate['event_data'].get('summary', 'No title')}
+Date/Time: {candidate['event_data'].get('start_time', 'No date')}
+Source Email: {candidate['source_email'].get('subject', '')} from {candidate['source_email'].get('sender', '')}
+"""
+
+        prompt = f"""Analyze if this new school event matches any of the existing events below:
+
+NEW EVENT:
+Title: {new_event.get('summary', 'No title')}
+Date/Time: {new_event.get('start_time', 'No date')}
+Description: {new_event.get('description', 'No description')}
+Source Email: {source_email.get('subject', '')} from {source_email.get('sender', '')}
+
+EXISTING EVENTS TO COMPARE:
+{candidates_text}
+
+For EACH candidate, determine:
+1. Are they the same real-world event? (same activity, same date, same context)
+2. Similarity score (0.0 to 1.0)
+3. If duplicate, how to merge them?
+
+Respond with ONLY valid JSON in this exact format (no other text):
+{{
+  "comparisons": [
+    {{
+      "candidate_number": 1,
+      "is_duplicate": true/false,
+      "similarity_score": 0.85,
+      "reasoning": "brief explanation",
+      "merge_strategy": {{
+        "keep_title": "event1|event2|combine",
+        "keep_description": "event1|event2|combine",
+        "combine_notes": true/false,
+        "preferred_time": "event1|event2"
+      }}
+    }}
+  ]
+}}"""
+
+        # Retry logic with exponential backoff for transient errors
+        max_retries = 10
+        base_delay = 2  # Start with 2 seconds
+
+        for attempt in range(max_retries):
+            try:
+                message = self.client.messages.create(
+                    model=self.ai_config['model_cheap'],  # Use cheap model for duplicate detection
+                    max_tokens=800,  # Reduced from 1500 (batch JSON response)
+                    messages=[{
+                        "role": "user",
+                        "content": prompt
+                    }]
+                )
+
+                response_text = message.content[0].text.strip()
+
+                # Log token usage
+                if self.token_tracker:
+                    self.token_tracker.log_call(
+                        operation='duplicate_detection_batch',
+                        model=self.ai_config['model_cheap'],
+                        input_tokens=message.usage.input_tokens,
+                        output_tokens=message.usage.output_tokens,
+                        metadata={'batch_size': len(candidates)}
+                    )
+
+                # Extract JSON with robust handling
+                response_text = self._extract_json_from_response(response_text)
+
+                # Parse JSON response
+                try:
+                    analysis = json.loads(response_text)
+                    comparisons = analysis.get('comparisons', [])
+
+                    # Build results list matching the order of candidates
+                    results = []
+                    for idx in range(len(candidates)):
+                        # Find comparison for this candidate (1-indexed in response)
+                        comparison = next((c for c in comparisons if c.get('candidate_number') == idx + 1), None)
+
+                        if comparison:
+                            similarity_score = comparison.get('similarity_score', 0.0)
+                            results.append((similarity_score, comparison))
+                        else:
+                            # No match found for this candidate
+                            results.append((0.0, {}))
+
+                    return results
+
+                except json.JSONDecodeError as e:
+                    # Retry if this isn't the last attempt
+                    if attempt < max_retries - 1:
+                        print(f"[!] JSON parse error (attempt {attempt + 1}/{max_retries}): {str(e)[:50]}, retrying...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        print(f"[!] AI response not valid JSON after {max_retries} attempts")
+                        print(f"[!] JSON Error: {str(e)}")
+                        print(f"[!] Response preview: {response_text[:300]}...")
+                        print(f"[!] Skipping duplicate detection for this batch")
+                        return [(0.0, {}) for _ in candidates]
+
+            except anthropic.RateLimitError as e:
+                # Handle rate limit errors (429, 529)
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                    print(f"[!] API rate limit/overload (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"[!] API overloaded after {max_retries} attempts. Skipping AI analysis for this batch.")
+                    return [(0.0, {}) for _ in candidates]
+
+            except anthropic.APIError as e:
+                # Handle other API errors
+                if attempt < max_retries - 1 and hasattr(e, 'status_code') and e.status_code >= 500:
+                    # Server errors - retry
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[!] API error {e.status_code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"[!] API error in AI similarity analysis: {e}")
+                    return [(0.0, {}) for _ in candidates]
+
+            except Exception as e:
+                print(f"[!] Error in AI batch similarity analysis: {e}")
+                return [(0.0, {}) for _ in candidates]
+
+        # Should not reach here, but just in case
+        return [(0.0, {}) for _ in candidates]
+
     def _analyze_event_similarity(self, new_event: Dict, candidate: Dict, source_email: Dict) -> Tuple[float, Dict]:
         """Use AI to analyze if two events are duplicates and how to merge them"""
 
@@ -157,8 +305,8 @@ You must respond with ONLY valid JSON in this exact format (no other text):
         for attempt in range(max_retries):
             try:
                 message = self.client.messages.create(
-                    model=self.ai_config['model'],
-                    max_tokens=1500,
+                    model=self.ai_config['model_cheap'],  # Use cheap model for duplicate detection
+                    max_tokens=500,  # Reduced from 1500 (only need small JSON)
                     messages=[{
                         "role": "user",
                         "content": prompt
@@ -167,12 +315,18 @@ You must respond with ONLY valid JSON in this exact format (no other text):
 
                 response_text = message.content[0].text.strip()
 
-                # Try to extract JSON if response has extra text
-                # Sometimes AI adds markdown code blocks
-                if '```json' in response_text:
-                    response_text = response_text.split('```json')[1].split('```')[0].strip()
-                elif '```' in response_text:
-                    response_text = response_text.split('```')[1].split('```')[0].strip()
+                # Log token usage
+                if self.token_tracker:
+                    self.token_tracker.log_call(
+                        operation='duplicate_detection_single',
+                        model=self.ai_config['model_cheap'],
+                        input_tokens=message.usage.input_tokens,
+                        output_tokens=message.usage.output_tokens,
+                        metadata={}
+                    )
+
+                # Extract JSON with robust handling
+                response_text = self._extract_json_from_response(response_text)
 
                 # Parse JSON response
                 try:
@@ -182,12 +336,13 @@ You must respond with ONLY valid JSON in this exact format (no other text):
                 except json.JSONDecodeError as e:
                     # Retry if this isn't the last attempt
                     if attempt < max_retries - 1:
-                        print(f"[!] Invalid JSON (attempt {attempt + 1}/{max_retries}), retrying...")
+                        print(f"[!] JSON parse error (attempt {attempt + 1}/{max_retries}): {str(e)[:50]}, retrying...")
                         time.sleep(1)
                         continue
                     else:
                         print(f"[!] AI response not valid JSON after {max_retries} attempts")
-                        print(f"[!] Response: {response_text[:200]}...")
+                        print(f"[!] JSON Error: {str(e)}")
+                        print(f"[!] Response preview: {response_text[:300]}...")
                         return 0.0, {}
 
             except anthropic.RateLimitError as e:
@@ -459,5 +614,76 @@ You must respond with ONLY valid JSON in this exact format (no other text):
                 
                 if new_email == existing_email:
                     return True
-        
+
         return False
+
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """
+        Robustly extract JSON from AI response, handling various formatting issues
+        """
+        # Method 1: Try to extract from markdown code blocks
+        if '```json' in response_text:
+            try:
+                extracted = response_text.split('```json')[1].split('```')[0].strip()
+                return extracted
+            except IndexError:
+                pass
+
+        if '```' in response_text:
+            try:
+                extracted = response_text.split('```')[1].split('```')[0].strip()
+                # Verify it looks like JSON
+                if extracted.strip().startswith('{'):
+                    return extracted
+            except IndexError:
+                pass
+
+        # Method 2: Find JSON object boundaries (look for outermost braces)
+        # This handles cases where AI adds explanatory text before/after JSON
+        try:
+            # Find first { and last }
+            first_brace = response_text.find('{')
+            last_brace = response_text.rfind('}')
+
+            if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                extracted = response_text[first_brace:last_brace + 1]
+
+                # Quick validation: count braces
+                if extracted.count('{') == extracted.count('}'):
+                    return extracted
+        except Exception:
+            pass
+
+        # Method 3: Remove common prefixes/suffixes that Haiku might add
+        cleaned = response_text
+
+        # Remove common AI prefixes
+        prefixes_to_remove = [
+            "Here is the JSON response:",
+            "Here's the analysis:",
+            "The JSON output is:",
+            "Response:",
+        ]
+        for prefix in prefixes_to_remove:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+
+        # Remove common AI suffixes
+        suffixes_to_remove = [
+            "Let me know if you need any clarification.",
+            "Hope this helps!",
+        ]
+        for suffix in suffixes_to_remove:
+            if cleaned.endswith(suffix):
+                cleaned = cleaned[:-len(suffix)].strip()
+
+        # Method 4: Use regex to extract JSON structure
+        # Look for pattern: { ... "comparisons": [ ... ] ... }
+        json_pattern = r'\{[^{}]*"comparisons"[^{}]*\[[^\]]*\][^{}]*\}'
+        matches = re.findall(json_pattern, cleaned, re.DOTALL)
+        if matches:
+            # Return the longest match (most complete)
+            return max(matches, key=len)
+
+        # Method 5: If all else fails, return original (will likely fail JSON parsing, triggering retry)
+        return response_text

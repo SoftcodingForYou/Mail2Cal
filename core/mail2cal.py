@@ -21,6 +21,7 @@ try:
     TEACHER_3_EMAIL = get_secure_credential('TEACHER_3_EMAIL')  # Teacher 3 (Afterschool) → Both Calendars
     TEACHER_4_EMAIL = get_secure_credential('TEACHER_4_EMAIL')  # Teacher 4 (Afterschool) → Both Calendars
     AI_MODEL = get_secure_credential('AI_MODEL')
+    AI_MODEL_CHEAP = get_secure_credential('AI_MODEL_CHEAP')
     DEFAULT_MONTHS_BACK = float(get_secure_credential('DEFAULT_MONTHS_BACK'))
 
     # Build comprehensive sender filter combining wildcard and exact teacher emails
@@ -63,6 +64,7 @@ from .event_tracker import EventTracker
 from .smart_event_merger import SmartEventMerger
 from processors.pdf_attachment_processor import PDFAttachmentProcessor
 from .global_event_cache import GlobalEventCache
+from .token_tracker import TokenTracker
 
 # Gmail and Calendar API scopes
 SCOPES = [
@@ -102,7 +104,8 @@ class Mail2Cal:
             'ai_service': {
                 'provider': 'anthropic',
                 'api_key_env_var': 'ANTHROPIC_API_KEY',
-                'model': AI_MODEL
+                'model': AI_MODEL,
+                'model_cheap': AI_MODEL_CHEAP
             },
             'event_tracking': {
                 'storage_file': 'event_mappings.json'
@@ -116,9 +119,10 @@ class Mail2Cal:
         
         self.gmail_service = None
         self.calendar_service = None
-        self.ai_parser = AIEmailParser(self.config)
+        self.token_tracker = TokenTracker()
+        self.ai_parser = AIEmailParser(self.config, self.token_tracker)
         self.event_tracker = EventTracker(self.config['event_tracking']['storage_file'])
-        self.smart_merger = SmartEventMerger(self.config['ai_service'], self.event_tracker)
+        self.smart_merger = SmartEventMerger(self.config['ai_service'], self.event_tracker, self.token_tracker)
         self.global_cache = GlobalEventCache()
         self.pdf_processor = None  # Will be initialized after Gmail service is ready
         
@@ -778,13 +782,23 @@ class Mail2Cal:
                         print(f"[!] Email already processed but events were deleted - reprocessing to recreate events")
                         print(f"[!] Subject: {email['subject']}")
                         # Continue processing to recreate the missing events
-                
-                # Parse events using AI
-                print("[AI] Analyzing email content with Claude...")
+
+                # TWO-STAGE AI PROCESSING
+                # STAGE 1: Quick classification with Haiku (cheap)
+                print("[AI STAGE 1] Classifying email with Haiku...")
+                has_events = self.ai_parser.classify_email_has_events(email)
+
+                if not has_events:
+                    print("[SKIP] No events detected by classifier - skipping extraction")
+                    stats['skipped'] += 1
+                    continue
+
+                # STAGE 2: Full extraction with Sonnet (only if Stage 1 says has events)
+                print("[AI STAGE 2] Extracting events with Sonnet...")
                 events = self.parse_events_from_email(email)
-                
+
                 if not events:
-                    print("[!] No events detected in this email")
+                    print("[!] No events extracted (classifier was wrong)")
                     stats['processed'] += 1
                     continue
                 
@@ -911,7 +925,13 @@ class Mail2Cal:
         print(f"Total events in database: {tracker_stats['total_events_created']}")
         print(f"Emails processed this month: {tracker_stats['emails_this_month']}")
         print(f"Average events per email: {tracker_stats['average_events_per_email']:.1f}")
-        
+
+        # Display AI token usage summary
+        self.token_tracker.print_summary()
+
+        # Optionally save detailed log
+        self.token_tracker.save_to_file('ai_usage_log.json')
+
         print(f"\n[+] Mail2Cal processing completed successfully!")
 
 def main():

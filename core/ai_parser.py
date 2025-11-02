@@ -11,10 +11,11 @@ import anthropic
 
 
 class AIEmailParser:
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, token_tracker=None):
         self.config = config
         self.ai_config = config['ai_service']
         self.client = self._initialize_ai_client()
+        self.token_tracker = token_tracker
     
     def _initialize_ai_client(self):
         """Initialize AI client based on configuration"""
@@ -30,7 +31,81 @@ class AIEmailParser:
             return anthropic.Anthropic(api_key=api_key)
         else:
             raise ValueError(f"Unsupported AI provider: {provider}")
-    
+
+    def classify_email_has_events(self, email: Dict) -> bool:
+        """
+        STAGE 1: Quick classification using Haiku to determine if email contains events
+        Returns True if email likely contains events, False otherwise
+        """
+        prompt = f"""Analyze this school email and determine if it contains ANY event information.
+
+Email Subject: {email['subject']}
+Email Body: {email['body'][:1000]}...
+
+An event is ANY of:
+- Scheduled activities, meetings, ceremonies
+- Homework or assignment due dates
+- Material or supply requests with specific deadlines (e.g., "bring X on Friday")
+- Holidays or no-school days
+- Parent-teacher conferences
+- School closures or schedule changes
+- Extracurricular activities
+
+Respond with ONLY a JSON object (no other text):
+{{
+  "has_events": true/false,
+  "confidence": "high|medium|low",
+  "reasoning": "brief 1-sentence explanation"
+}}"""
+
+        try:
+            if self.ai_config['provider'] == "anthropic":
+                # Use cheap model for classification
+                response = self.client.messages.create(
+                    model=self.ai_config.get('model_cheap', 'claude-haiku-4-5-20251001'),
+                    max_tokens=200,
+                    temperature=0,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt
+                    }]
+                )
+
+                response_text = response.content[0].text.strip()
+
+                # Log token usage
+                if self.token_tracker:
+                    self.token_tracker.log_call(
+                        operation='email_classification',
+                        model=self.ai_config.get('model_cheap', 'claude-haiku-4-5-20251001'),
+                        input_tokens=response.usage.input_tokens,
+                        output_tokens=response.usage.output_tokens,
+                        metadata={'email_id': email.get('id', 'unknown')}
+                    )
+
+                # Parse response
+                if '```json' in response_text:
+                    response_text = response_text.split('```json')[1].split('```')[0].strip()
+                elif '```' in response_text:
+                    response_text = response_text.split('```')[1].split('```')[0].strip()
+
+                result = json.loads(response_text)
+                has_events = result.get('has_events', False)
+                confidence = result.get('confidence', 'low')
+
+                print(f"[CLASSIFY] Has events: {has_events} (confidence: {confidence})")
+
+                return has_events
+
+            else:
+                # For OpenAI, fallback to always returning True (skip classification)
+                return True
+
+        except Exception as e:
+            print(f"[!] Classification error: {e}")
+            # On error, assume it has events (safer to process than skip)
+            return True
+
     def parse_email_for_events(self, email: Dict, sender_type: str = 'other') -> List[Dict]:
         """Use AI to parse email content and extract event information"""
         
@@ -98,8 +173,10 @@ De: {email['sender']}
 Fecha: {email['date']}
 Contenido: {email['body']}
 
-TAREA: Extraer todos los eventos, actividades, tareas, fechas límite, reuniones, presentaciones, o cualquier información sensible al tiempo.
-ESPECIAL ATENCIÓN: Si hay contenido de archivos PDF, este puede contener días feriados, actividades especiales o cambios importantes en el calendario.
+TAREA: Extraer todos los eventos, actividades, tareas, fechas límite, reuniones, presentaciones, solicitudes de materiales/útiles, o cualquier información sensible al tiempo.
+ESPECIAL ATENCIÓN:
+- Si hay contenido de archivos PDF, este puede contener días feriados, actividades especiales o cambios importantes en el calendario.
+- SOLICITUDES DE MATERIALES: Cuando se pide traer materiales (reciclados, disfraces, útiles escolares, etc.) en una fecha específica, crear un evento para ese día.
 
 Para cada evento encontrado, proporciona una respuesta JSON con esta estructura exacta:
 {{
@@ -113,7 +190,7 @@ Para cada evento encontrado, proporciona una respuesta JSON con esta estructura 
       "end_time": "HH:MM" o null si no se especifica,
       "all_day": true/false,
       "location": "ubicación si se menciona" o null,
-      "event_type": "tarea|reunion|actividad|ceremonia|presentacion|general",
+      "event_type": "tarea|reunion|actividad|ceremonia|presentacion|solicitud_material|general",
       "priority": "alta|media|baja",
       "recurring": true/false,
       "notes": "Cualquier detalle adicional importante EN ESPAÑOL CHILENO FORMAL"
@@ -133,6 +210,14 @@ DIRECTRICES IMPORTANTES:
 7. EVITAR eventos recurrentes - crear solo eventos únicos. Solo usar recurring: true para actividades ESPECÍFICAMENTE mencionadas como semanales/recurrentes
 8. Si no se encuentran eventos, devolver {{"events": []}}
 9. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
+10. SOLICITUDES DE MATERIALES: Crear eventos tipo "solicitud_material" cuando se pida traer:
+    - Materiales reciclados (botellas, cartón, etc.)
+    - Disfraces o ropa especial
+    - Útiles escolares específicos
+    - Alimentos o ingredientes para actividades
+    - Cualquier objeto que deba traerse en una fecha específica
+    En "title" usar formato: "Traer [material]"
+    En "description" incluir detalles específicos (cantidad, características, propósito)
 
 REGLAS ESPECIALES PARA ACTIVIDADES EXTRAESCOLARES Y TALLERES:
 - FORMATO TABULAR: Si el contenido está en formato de tabla con columnas de días (LUNES, MARTES, MIÉRCOLES, JUEVES, VIERNES, SÁBADO, DOMINGO), analizar cuidadosamente qué actividad pertenece a qué columna
@@ -195,6 +280,17 @@ Responde SOLO con JSON válido, sin texto adicional.
                 {"role": "user", "content": prompt}
             ]
         )
+
+        # Log token usage
+        if self.token_tracker:
+            self.token_tracker.log_call(
+                operation='event_extraction',
+                model=self.ai_config['model'],
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                metadata={}
+            )
+
         return response.content[0].text
     
     def _parse_ai_response(self, response: str, email: Dict) -> List[Dict]:
