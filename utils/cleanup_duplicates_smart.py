@@ -346,9 +346,11 @@ def cleanup_ai_duplicates(service, duplicates, smart_merger, event_tracker, cale
                         eventId=new_event['id']
                     ).execute()
 
-                    print(f"  [MERGED] Combined information from both events")
-                    print(f"    Kept: {existing_event.get('summary', '')[:40]}...")
-                    print(f"    Deleted: {new_event.get('summary', '')[:40]}...")
+                    print(f"  [MERGED] Successfully combined information from both events")
+                    print(f"    Updated event: {existing_event.get('summary', '')[:50]}")
+                    print(f"    Source 1: {existing_email_info.get('email_subject', 'Unknown')[:40]}")
+                    print(f"    Source 2: {new_email_info.get('email_subject', 'Unknown')[:40]}")
+                    print(f"    Removed duplicate event ID: {new_event['id'][:20]}...")
                     auto_merged += 1
                 else:
                     print(f"  [ERROR] Merge failed, events not combined")
