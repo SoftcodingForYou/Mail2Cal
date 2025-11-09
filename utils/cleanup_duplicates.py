@@ -47,10 +47,10 @@ def find_school_events(service):
     all_mail2cal_events = []
     calendar_ids = [GOOGLE_CALENDAR_ID_1, GOOGLE_CALENDAR_ID_2]
     
-    # Search for events created by Mail2Cal
+    # Search for events created by Mail2Cal (today and future only)
     now = datetime.utcnow()
-    time_min = (now - timedelta(days=365)).isoformat() + 'Z'  # 1 year ago
-    time_max = (now + timedelta(days=365)).isoformat() + 'Z'  # 1 year ahead
+    time_min = now.isoformat() + 'Z'  # Today onwards (no past events)
+    time_max = (now + timedelta(days=730)).isoformat() + 'Z'  # 2 years ahead
     
     for calendar_id in calendar_ids:
         if not calendar_id:
