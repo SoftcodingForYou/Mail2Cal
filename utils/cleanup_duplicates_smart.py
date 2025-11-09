@@ -16,6 +16,7 @@ from googleapiclient.errors import HttpError
 
 from core.smart_event_merger import SmartEventMerger
 from core.event_tracker import EventTracker
+from core.token_tracker import TokenTracker
 from auth.secure_credentials import get_secure_credential
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -400,7 +401,8 @@ def main():
         'model_cheap': get_secure_credential('AI_MODEL_CHEAP')
     }
     event_tracker = EventTracker('event_mappings.json')
-    smart_merger = SmartEventMerger(ai_config, event_tracker)
+    token_tracker = TokenTracker()
+    smart_merger = SmartEventMerger(ai_config, event_tracker, token_tracker)
 
     # Get all Mail2Cal events
     events = get_all_mail2cal_events(service)
@@ -435,6 +437,10 @@ def main():
     print(f"\n[+] AI-Enhanced duplicate cleanup completed!")
     if manual_review > 0:
         print(f"[!] {manual_review} potential duplicates need manual review")
+
+    # Display AI token usage summary
+    print("\n" + "=" * 60)
+    token_tracker.print_summary()
 
 if __name__ == "__main__":
     main()
