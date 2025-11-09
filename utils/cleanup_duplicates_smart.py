@@ -88,6 +88,40 @@ def get_all_mail2cal_events(service):
     print(f"\n[+] Total Mail2Cal events found: {len(all_events)}")
     return all_events
 
+def _extract_source_from_description(description: str) -> dict:
+    """Extract source email info from event description as fallback"""
+    import re
+
+    info = {}
+
+    if not description:
+        return info
+
+    # Look for the source information section
+    if 'INFORMACIÓN DEL EMAIL FUENTE:' in description:
+        # Extract subject
+        subject_match = re.search(r'Asunto:\s*(.+?)(?:\n|$)', description)
+        if subject_match:
+            info['email_subject'] = subject_match.group(1).strip()
+
+        # Extract date
+        date_match = re.search(r'Fecha del email:\s*(.+?)(?:\n|$)', description)
+        if date_match:
+            info['email_date'] = date_match.group(1).strip()
+
+        # Extract sender
+        sender_match = re.search(r'Remitente:\s*(.+?)(?:\n|$)', description)
+        if sender_match:
+            info['email_sender'] = sender_match.group(1).strip()
+
+        # Extract email ID
+        id_match = re.search(r'ID del email:\s*(.+?)(?:\n|$)', description)
+        if id_match:
+            # Use this as the key for the dict
+            pass  # We already have it from extended properties
+
+    return info
+
 def find_ai_duplicates(events, smart_merger, event_tracker):
     """Use AI to find semantic duplicates across all events"""
     print("\n[AI] Analyzing events for intelligent duplicates...")
@@ -252,12 +286,18 @@ def cleanup_ai_duplicates(service, duplicates, smart_merger, event_tracker, cale
                     existing_event = event2
 
                 # Extract source email info from event metadata
-                existing_email_id = existing_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_email_id', 'unknown')
-                new_email_id = new_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_email_id', 'unknown')
+                existing_email_id = existing_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_source_email_id', 'unknown')
+                new_email_id = new_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_source_email_id', 'unknown')
 
                 # Look up source email info from event tracker
                 existing_email_info = event_tracker.mappings.get(existing_email_id, {})
                 new_email_info = event_tracker.mappings.get(new_email_id, {})
+
+                # Fallback: If tracker doesn't have the email info, parse it from the event description
+                if not existing_email_info:
+                    existing_email_info = _extract_source_from_description(existing_event.get('description', ''))
+                if not new_email_info:
+                    new_email_info = _extract_source_from_description(new_event.get('description', ''))
 
                 # Build the structure that merge_events expects
                 merge_info = {
