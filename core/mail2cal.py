@@ -809,6 +809,7 @@ class Mail2Cal:
                     event['source_email_subject'] = email.get('subject', '')
                     event['source_email_sender'] = email.get('sender', '')
                     event['source_email_date'] = email.get('date', '')
+                    event['source_email_id'] = email.get('id', '')
                 
                 # UNIFIED: Use AI-powered smart duplicate detection with 2-week window
                 print("[AI] Checking for potential duplicate events (2-week window from today)...")

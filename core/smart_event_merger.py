@@ -528,31 +528,63 @@ You must respond with ONLY valid JSON in this exact format (no other text):
         """Merge event descriptions based on strategy"""
         new_desc = new_event.get('description', '')
         existing_desc = existing_event.get('description', '')
-        
+
         strategy = merge_strategy.get('keep_description', 'combine')
-        
+
         if strategy == 'event1':
             return new_desc
         elif strategy == 'event2':
             return existing_desc
         elif strategy == 'combine':
-            # Combine both descriptions intelligently
+            # Extract content parts by removing the "INFORMACIÓN DEL EMAIL FUENTE" sections
+            # This prevents duplication of source email info
+            existing_content = self._extract_content_without_source_info(existing_desc)
+            new_content = self._extract_content_without_source_info(new_desc)
+
+            # Combine content intelligently
             combined = []
-            
-            if existing_desc:
-                combined.append(existing_desc)
-            
-            if new_desc and new_desc.lower() not in existing_desc.lower():
-                combined.append(f"\n--- Información adicional ---\n{new_desc}")
-            
-            # Add source tracking
-            combined.append(f"\n--- Fuentes combinadas ---")
-            combined.append(f"Email original: {existing_info['source_email']['subject']}")
-            combined.append(f"Email adicional: {new_event.get('source_email_subject', 'Email reciente')}")
-            
+
+            if existing_content:
+                combined.append(existing_content)
+
+            if new_content and new_content.lower() not in existing_content.lower():
+                combined.append(f"\n--- Información adicional ---\n{new_content}")
+
+            # Add comprehensive source tracking section at the end
+            combined.append(f"\n{'='*50}")
+            combined.append(f"FUENTES COMBINADAS:")
+            combined.append(f"\nFuente 1:")
+            combined.append(f"  Asunto: {existing_info['source_email']['subject']}")
+            combined.append(f"  Remitente: {existing_info['source_email']['sender']}")
+            combined.append(f"  Fecha: {existing_info['source_email']['date']}")
+            combined.append(f"  ID: {existing_info['source_email']['id']}")
+
+            combined.append(f"\nFuente 2:")
+            combined.append(f"  Asunto: {new_event.get('source_email_subject', 'N/A')}")
+            combined.append(f"  Remitente: {new_event.get('source_email_sender', 'N/A')}")
+            combined.append(f"  Fecha: {new_event.get('source_email_date', 'N/A')}")
+            combined.append(f"  ID: {new_event.get('source_email_id', 'N/A')}")
+
+            combined.append(f"\nEventos combinados por Mail2Cal el: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
             return '\n'.join(combined)
-        
+
         return existing_desc or new_desc
+
+    def _extract_content_without_source_info(self, description: str) -> str:
+        """Extract event content by removing the source email information section"""
+        if not description:
+            return ''
+
+        # Find the separator line that marks the start of source info
+        separator = '='*50
+        if separator in description:
+            # Split and take everything before the first separator
+            content = description.split(separator)[0].strip()
+            return content
+
+        # If no separator found, return the whole description
+        return description
     
     def _get_calendar_id_for_event(self, event_id: str, calendar_service, config: Dict) -> Optional[str]:
         """Find which calendar contains the given event ID"""

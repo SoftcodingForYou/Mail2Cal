@@ -88,21 +88,10 @@ def get_all_mail2cal_events(service):
     print(f"\n[+] Total Mail2Cal events found: {len(all_events)}")
     return all_events
 
-def find_ai_duplicates(events):
+def find_ai_duplicates(events, smart_merger, event_tracker):
     """Use AI to find semantic duplicates across all events"""
     print("\n[AI] Analyzing events for intelligent duplicates...")
     print("=" * 60)
-
-    # Initialize AI components
-    ai_config = {
-        'provider': 'anthropic',
-        'api_key_env_var': 'ANTHROPIC_API_KEY',
-        'model': get_secure_credential('AI_MODEL'),
-        'model_cheap': get_secure_credential('AI_MODEL_CHEAP')
-    }
-
-    event_tracker = EventTracker('event_mappings.json')
-    smart_merger = SmartEventMerger(ai_config, event_tracker)
 
     duplicates = []
     processed_events = set()
@@ -217,64 +206,132 @@ def find_ai_duplicates(events):
     
     return duplicates
 
-def cleanup_ai_duplicates(service, duplicates):
-    """Clean up duplicates using AI recommendations"""
+def cleanup_ai_duplicates(service, duplicates, smart_merger, event_tracker, calendar_ids):
+    """Clean up duplicates using AI recommendations and proper event merging"""
     print(f"\n[*] CLEANING UP AI-DETECTED DUPLICATES")
     print("=" * 60)
-    
+
     auto_merged = 0
     manual_review = 0
     errors = 0
-    
+
+    # Build config for merge_events
+    config = {
+        'calendars': {
+            'calendar_id_1': calendar_ids[0] if len(calendar_ids) > 0 else '',
+            'calendar_id_2': calendar_ids[1] if len(calendar_ids) > 1 else ''
+        }
+    }
+
     for duplicate_info in duplicates:
         event1 = duplicate_info['event1']
         event2 = duplicate_info['event2']
         similarity = duplicate_info['similarity_score']
         action = duplicate_info['action']
-        
+        merge_recommendation = duplicate_info.get('merge_recommendation', {})
+
         print(f"\n[PROCESSING] {event1.get('summary', 'Untitled')[:40]}...")
         print(f"  Similarity: {similarity:.2f}")
         print(f"  Action: {action.upper()}")
-        
+
         if action == 'merge' and similarity > 0.85:
-            # Auto-merge high confidence duplicates
+            # Auto-merge high confidence duplicates using proper merge method
             try:
-                # Keep the event with more information (longer description)
-                event1_desc_len = len(event1.get('description', ''))
-                event2_desc_len = len(event2.get('description', ''))
-                
-                if event1_desc_len >= event2_desc_len:
-                    keep_event = event1
-                    delete_event = event2
+                # Determine which event to treat as "new" and "existing"
+                # Use creation time or default to event1 as existing
+                event1_created = event1.get('created', '')
+                event2_created = event2.get('created', '')
+
+                if event2_created > event1_created:
+                    # event2 is newer
+                    new_event = event2
+                    existing_event = event1
                 else:
-                    keep_event = event2
-                    delete_event = event1
-                
-                # Delete the less informative event
-                service.events().delete(
-                    calendarId=delete_event['_calendar_id'],
-                    eventId=delete_event['id']
-                ).execute()
-                
-                print(f"  [MERGED] Deleted duplicate, kept more detailed version")
-                auto_merged += 1
-                
+                    # event1 is newer or same age
+                    new_event = event1
+                    existing_event = event2
+
+                # Extract source email info from event metadata
+                existing_email_id = existing_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_email_id', 'unknown')
+                new_email_id = new_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_email_id', 'unknown')
+
+                # Look up source email info from event tracker
+                existing_email_info = event_tracker.mappings.get(existing_email_id, {})
+                new_email_info = event_tracker.mappings.get(new_email_id, {})
+
+                # Build the structure that merge_events expects
+                merge_info = {
+                    'new_event': {
+                        'summary': new_event.get('summary', ''),
+                        'description': new_event.get('description', ''),
+                        'start_time': new_event.get('start', {}).get('dateTime') or new_event.get('start', {}).get('date', ''),
+                        'end_time': new_event.get('end', {}).get('dateTime') or new_event.get('end', {}).get('date', ''),
+                        'location': new_event.get('location', ''),
+                        'all_day': 'date' in new_event.get('start', {}),
+                        'source_email_subject': new_email_info.get('email_subject', 'Unknown'),
+                        'source_email_sender': new_email_info.get('email_sender', 'Unknown'),
+                        'source_email_date': new_email_info.get('email_date', 'Unknown'),
+                        'source_email_id': new_email_id
+                    },
+                    'existing_event': {
+                        'event_data': {
+                            'summary': existing_event.get('summary', ''),
+                            'description': existing_event.get('description', ''),
+                            'start_time': existing_event.get('start', {}).get('dateTime') or existing_event.get('start', {}).get('date', ''),
+                            'end_time': existing_event.get('end', {}).get('dateTime') or existing_event.get('end', {}).get('date', ''),
+                            'location': existing_event.get('location', ''),
+                            'all_day': 'date' in existing_event.get('start', {}),
+                            'calendar_event_id': existing_event['id'],
+                            'created_at': existing_event.get('created', ''),
+                            'mail2cal_merge_count': existing_event.get('extendedProperties', {}).get('private', {}).get('mail2cal_merge_count', '1')
+                        },
+                        'source_email': {
+                            'id': existing_email_id,
+                            'subject': existing_email_info.get('email_subject', 'Unknown'),
+                            'sender': existing_email_info.get('email_sender', 'Unknown'),
+                            'date': existing_email_info.get('email_date', 'Unknown')
+                        }
+                    },
+                    'merge_recommendation': merge_recommendation,
+                    'similarity_score': similarity
+                }
+
+                # Use the proper merge_events method
+                merged_event_id = smart_merger.merge_events(merge_info, service, config)
+
+                if merged_event_id:
+                    # Delete the duplicate event (the one we didn't update)
+                    service.events().delete(
+                        calendarId=new_event['_calendar_id'],
+                        eventId=new_event['id']
+                    ).execute()
+
+                    print(f"  [MERGED] Combined information from both events")
+                    print(f"    Kept: {existing_event.get('summary', '')[:40]}...")
+                    print(f"    Deleted: {new_event.get('summary', '')[:40]}...")
+                    auto_merged += 1
+                else:
+                    print(f"  [ERROR] Merge failed, events not combined")
+                    errors += 1
+
             except Exception as e:
                 print(f"  [ERROR] Failed to merge: {e}")
+                import traceback
+                traceback.print_exc()
                 errors += 1
-                
+
         else:
             # Flag for manual review
             print(f"  [REVIEW] Similarity {similarity:.2f} requires manual review")
             print(f"    Event 1: {event1.get('summary', '')} ({event1['_calendar_name']})")
             print(f"    Event 2: {event2.get('summary', '')} ({event2['_calendar_name']})")
             manual_review += 1
-    
+
     print(f"\n[*] AI CLEANUP SUMMARY:")
     print(f"    Auto-merged: {auto_merged}")
     print(f"    Manual review needed: {manual_review}")
     print(f"    Errors: {errors}")
-    
+
     return auto_merged, manual_review, errors
 
 def main():
@@ -283,25 +340,40 @@ def main():
     print("=" * 60)
     print("Using Claude AI for intelligent duplicate detection")
     print()
-    
+
     # Authenticate
     service = authenticate()
     print("[+] Authenticated with Google Calendar")
-    
+
+    # Get calendar IDs
+    calendar_id_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')
+    calendar_id_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')
+    calendar_ids = [calendar_id_1, calendar_id_2]
+
+    # Initialize AI components (create once, use for both detection and merging)
+    ai_config = {
+        'provider': 'anthropic',
+        'api_key_env_var': 'ANTHROPIC_API_KEY',
+        'model': get_secure_credential('AI_MODEL'),
+        'model_cheap': get_secure_credential('AI_MODEL_CHEAP')
+    }
+    event_tracker = EventTracker('event_mappings.json')
+    smart_merger = SmartEventMerger(ai_config, event_tracker)
+
     # Get all Mail2Cal events
     events = get_all_mail2cal_events(service)
-    
+
     if not events:
         print("[!] No Mail2Cal events found")
         return
-    
-    # Find AI duplicates
-    duplicates = find_ai_duplicates(events)
-    
+
+    # Find AI duplicates (pass smart_merger to use the same instance)
+    duplicates = find_ai_duplicates(events, smart_merger, event_tracker)
+
     if not duplicates:
         print("\n[+] No duplicates detected by AI analysis!")
         return
-    
+
     # Ask for confirmation
     print(f"\n[?] Proceed with AI-guided cleanup? (y/n): ", end="")
     try:
@@ -312,10 +384,12 @@ def main():
     except:
         print("[!] Cleanup cancelled")
         return
-    
-    # Clean up duplicates
-    auto_merged, manual_review, errors = cleanup_ai_duplicates(service, duplicates)
-    
+
+    # Clean up duplicates using proper merge method
+    auto_merged, manual_review, errors = cleanup_ai_duplicates(
+        service, duplicates, smart_merger, event_tracker, calendar_ids
+    )
+
     print(f"\n[+] AI-Enhanced duplicate cleanup completed!")
     if manual_review > 0:
         print(f"[!] {manual_review} potential duplicates need manual review")
