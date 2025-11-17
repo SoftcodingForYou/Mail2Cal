@@ -410,19 +410,147 @@ You must respond with ONLY valid JSON in this exact format (no other text):
             print(f"[!] Error merging events: {e}")
             return None
     
+    def _ai_merge_event_content(self, new_event: Dict, existing_event: Dict, existing_info: Dict) -> Dict:
+        """Use AI (Haiku) to intelligently merge event titles and descriptions"""
+
+        prompt = f"""You are merging two duplicate calendar events into one comprehensive event. Combine the information intelligently.
+
+EVENT 1 (Existing):
+Title: {existing_event.get('summary', 'Sin título')}
+Description: {self._extract_content_without_source_info(existing_event.get('description', ''))}
+Source: {existing_info['source_email'].get('subject', 'Unknown')}
+
+EVENT 2 (New):
+Title: {new_event.get('summary', 'Sin título')}
+Description: {self._extract_content_without_source_info(new_event.get('description', ''))}
+Source: {new_event.get('source_email_subject', 'Unknown')}
+
+Create a merged event that:
+1. TITLE: Combine both titles into one clear, comprehensive title that captures all key information
+   - If titles are identical or nearly identical, use the more descriptive one
+   - If they have complementary info (e.g., "Activity A" and "Activity A - Bring materials"), combine them
+   - Keep it concise (max ~80 characters)
+
+2. DESCRIPTION: Merge descriptions intelligently
+   - Remove duplicate information
+   - Preserve all unique details from both events
+   - Organize information clearly
+   - Keep the most important information
+
+Respond with ONLY valid JSON in this format:
+{{
+    "merged_title": "The merged title here",
+    "merged_description": "The merged description here",
+    "reasoning": "Brief explanation of merge decisions"
+}}"""
+
+        # Call AI with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                message = self.client.messages.create(
+                    model=self.ai_config['model_cheap'],  # Use Haiku for merging
+                    max_tokens=1000,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt
+                    }]
+                )
+
+                response_text = message.content[0].text.strip()
+
+                # Log token usage
+                if self.token_tracker:
+                    self.token_tracker.log_call(
+                        operation='event_merge',
+                        model=self.ai_config['model_cheap'],
+                        input_tokens=message.usage.input_tokens,
+                        output_tokens=message.usage.output_tokens,
+                        metadata={'attempt': attempt + 1}
+                    )
+
+                # Extract and parse JSON
+                response_text = self._extract_json_from_response(response_text)
+                result = json.loads(response_text)
+
+                return {
+                    'title': result.get('merged_title', existing_event.get('summary', '')),
+                    'description': result.get('merged_description', existing_event.get('description', '')),
+                    'reasoning': result.get('reasoning', '')
+                }
+
+            except json.JSONDecodeError as e:
+                if attempt < max_retries - 1:
+                    print(f"[!] Merge JSON parse error (attempt {attempt + 1}/{max_retries}), retrying...")
+                    time.sleep(1)
+                    continue
+                else:
+                    print(f"[!] AI merge failed after {max_retries} attempts, using fallback")
+                    # Fallback to Python logic
+                    return {
+                        'title': new_event.get('summary', '') if len(new_event.get('summary', '')) > len(existing_event.get('summary', '')) else existing_event.get('summary', ''),
+                        'description': f"{existing_event.get('description', '')}\n\n--- Información adicional ---\n{new_event.get('description', '')}",
+                        'reasoning': 'Fallback: AI merge failed'
+                    }
+
+            except Exception as e:
+                print(f"[!] AI merge error: {e}, using fallback")
+                # Fallback to Python logic
+                return {
+                    'title': existing_event.get('summary', ''),
+                    'description': existing_event.get('description', ''),
+                    'reasoning': f'Fallback: {str(e)}'
+                }
+
+        # Should not reach here, but fallback just in case
+        return {
+            'title': existing_event.get('summary', ''),
+            'description': existing_event.get('description', ''),
+            'reasoning': 'Fallback: max retries exceeded'
+        }
+
     def _create_merged_event(self, new_event: Dict, existing_info: Dict, merge_strategy: Dict) -> Dict:
-        """Create a merged event with combined information"""
+        """Create a merged event with combined information using AI"""
         from datetime import datetime, timedelta
         existing_event = existing_info['event_data']
+
+        # Use AI to intelligently merge titles and descriptions
+        print(f"[AI] Using Haiku to merge event content...")
+        ai_merge_result = self._ai_merge_event_content(new_event, existing_event, existing_info)
 
         # Determine time format from existing event (preserve it to avoid API errors)
         # Google Calendar API requires: both date OR both dateTime, not mixed
         start_format, end_format = self._get_event_time_format(new_event, existing_event, merge_strategy)
 
-        # Start with existing event structure
+        # Build merged description with AI content + source tracking
+        merged_content = ai_merge_result['description']
+
+        # Add comprehensive source tracking section at the end
+        source_section = [
+            f"\n{'='*50}",
+            "FUENTES COMBINADAS:",
+            "",
+            "Fuente 1:",
+            f"  Asunto: {existing_info['source_email'].get('subject', 'Unknown')}",
+            f"  Remitente: {existing_info['source_email'].get('sender', 'Unknown')}",
+            f"  Fecha: {existing_info['source_email'].get('date', 'Unknown')}",
+            f"  ID: {existing_info['source_email'].get('id', 'Unknown')}",
+            "",
+            "Fuente 2:",
+            f"  Asunto: {new_event.get('source_email_subject', 'N/A')}",
+            f"  Remitente: {new_event.get('source_email_sender', 'N/A')}",
+            f"  Fecha: {new_event.get('source_email_date', 'N/A')}",
+            f"  ID: {new_event.get('source_email_id', 'N/A')}",
+            "",
+            f"Eventos combinados por Mail2Cal el: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        ]
+
+        final_description = merged_content + '\n' + '\n'.join(source_section)
+
+        # Build merged event structure
         merged = {
-            'summary': self._merge_titles(new_event, existing_event, merge_strategy),
-            'description': self._merge_descriptions(new_event, existing_event, existing_info, merge_strategy),
+            'summary': ai_merge_result['title'],
+            'description': final_description,
             'start': start_format,
             'end': end_format,
             'location': new_event.get('location', existing_event.get('location', '')),
@@ -431,7 +559,8 @@ You must respond with ONLY valid JSON in this exact format (no other text):
                     'mail2cal_created_at': existing_event.get('created_at', ''),
                     'mail2cal_updated_at': datetime.now().isoformat(),
                     'mail2cal_merged_from': f"emails:{existing_info['source_email']['id']},new_source",
-                    'mail2cal_merge_count': str(int(existing_event.get('mail2cal_merge_count', '1')) + 1)
+                    'mail2cal_merge_count': str(int(existing_event.get('mail2cal_merge_count', '1')) + 1),
+                    'mail2cal_merge_reasoning': ai_merge_result.get('reasoning', '')
                 }
             }
         }

@@ -342,16 +342,25 @@ def cleanup_ai_duplicates(service, duplicates, smart_merger, event_tracker, cale
 
                 if merged_event_id:
                     # Delete the duplicate event (the one we didn't update)
-                    service.events().delete(
-                        calendarId=new_event['_calendar_id'],
-                        eventId=new_event['id']
-                    ).execute()
+                    try:
+                        service.events().delete(
+                            calendarId=new_event['_calendar_id'],
+                            eventId=new_event['id']
+                        ).execute()
+                        delete_msg = f"Removed duplicate event ID: {new_event['id'][:20]}..."
+                    except HttpError as delete_error:
+                        if delete_error.resp.status == 410:
+                            # Event already deleted - that's fine, merge succeeded
+                            delete_msg = "Duplicate was already deleted (merge OK)"
+                        else:
+                            # Some other error - re-raise
+                            raise
 
                     print(f"  [MERGED] Successfully combined information from both events")
                     print(f"    Updated event: {existing_event.get('summary', '')[:50]}")
                     print(f"    Source 1: {existing_email_info.get('email_subject', 'Unknown')[:40]}")
                     print(f"    Source 2: {new_email_info.get('email_subject', 'Unknown')[:40]}")
-                    print(f"    Removed duplicate event ID: {new_event['id'][:20]}...")
+                    print(f"    {delete_msg}")
                     auto_merged += 1
                 else:
                     print(f"  [ERROR] Merge failed, events not combined")
