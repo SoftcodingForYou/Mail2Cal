@@ -201,16 +201,17 @@ Para cada evento encontrado, proporciona una respuesta JSON con esta estructura 
 {default_time_guidance}
 
 DIRECTRICES IMPORTANTES:
-1. Si no se menciona año específico, asumir {current_year}
-2. Aplicar las reglas de horario por defecto según el tipo de remitente (ver arriba)
-3. Buscar formatos de fecha en español: "15 de marzo", "viernes 20", etc.
-4. Extraer fechas límite de tareas, fechas de entrega de proyectos y entregas
-5. Incluir reuniones de apoderados, eventos escolares y fechas límite administrativas
-6. Si se mencionan rangos de tiempo (ej: "de 9:00 a 11:00"), establecer start_time y end_time
-7. EVITAR eventos recurrentes - crear solo eventos únicos. Solo usar recurring: true para actividades ESPECÍFICAMENTE mencionadas como semanales/recurrentes
-8. Si no se encuentran eventos, devolver {{"events": []}}
-9. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
-10. SOLICITUDES DE MATERIALES: Crear eventos tipo "solicitud_material" cuando se pida traer:
+1. **SOLO EVENTOS FUTUROS**: IGNORAR completamente eventos cuya fecha ya pasó. Solo extraer eventos para HOY o fechas FUTURAS. Emails tipo "Informativo Semana X al Y" que resumen semanas pasadas NO deben generar eventos.
+2. Si no se menciona año específico, asumir {current_year}
+3. Aplicar las reglas de horario por defecto según el tipo de remitente (ver arriba)
+4. Buscar formatos de fecha en español: "15 de marzo", "viernes 20", etc.
+5. Extraer fechas límite de tareas, fechas de entrega de proyectos y entregas
+6. Incluir reuniones de apoderados, eventos escolares y fechas límite administrativas
+7. Si se mencionan rangos de tiempo (ej: "de 9:00 a 11:00"), establecer start_time y end_time
+8. EVITAR eventos recurrentes - crear solo eventos únicos. Solo usar recurring: true para actividades ESPECÍFICAMENTE mencionadas como semanales/recurrentes
+9. Si no se encuentran eventos (o solo hay eventos pasados), devolver {{"events": []}}
+10. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
+11. SOLICITUDES DE MATERIALES: Crear eventos tipo "solicitud_material" cuando se pida traer:
     - Materiales reciclados (botellas, cartón, etc.)
     - Disfraces o ropa especial
     - Útiles escolares específicos
@@ -360,7 +361,25 @@ Responde SOLO con JSON válido, sin texto adicional.
                 ai_event.get('start_date'),
                 ai_event.get('start_time')
             )
-            
+
+            # FILTER OUT OLD PAST EVENTS: Skip events more than 24 hours in the past
+            # This allows processing events from today/yesterday but blocks old "Informativo Semana X" summaries
+            if start_datetime:
+                from datetime import timedelta
+                now = datetime.now()
+                cutoff = now - timedelta(hours=24)
+
+                # Handle both datetime and date objects
+                if isinstance(start_datetime, datetime):
+                    event_datetime = start_datetime
+                else:
+                    # If it's just a date, assume start of day for comparison
+                    event_datetime = datetime.combine(start_datetime, datetime.min.time())
+
+                if event_datetime < cutoff:
+                    print(f"[SKIP] Past event (>24h old) ignored: {ai_event.get('title', 'Untitled')} ({ai_event.get('start_date', 'no date')})")
+                    return None
+
             end_datetime = None
             if ai_event.get('end_date') or ai_event.get('end_time'):
                 end_datetime = self._parse_event_datetime(
