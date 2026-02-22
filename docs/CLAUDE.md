@@ -32,8 +32,8 @@ Mail2Cal/
 │   └── check_calendar.py              # View calendar events
 │
 ├── 📂 local_resources/                # File Processing Directory
-│   ├── Calendar_1/                    # Files for Calendar 1 only
-│   ├── Calendar_2/                    # Files for Calendar 2 only
+│   ├── Calendar_1_Pre-Kinder_B/       # Files for Calendar 1 (Pre-Kinder B) only
+│   ├── Calendar_2_Kinder_C/          # Files for Calendar 2 (Kinder C) only
 │   └── Both/                          # Files for both calendars
 │
 ├── 📚 docs/                           # Documentation
@@ -254,7 +254,7 @@ The system uses Google Sheets for secure credential storage:
 4. `python run_mail2cal.py --check` - Review calendar events
 
 ### File Processing Workflow
-1. Place files in `local_resources/Calendar_1/`, `local_resources/Calendar_2/`, or `local_resources/Both/`
+1. Place files in `local_resources/Calendar_1_Pre-Kinder_B/`, `local_resources/Calendar_2_Kinder_C/`, or `local_resources/Both/`
 2. `python run_mail2cal.py --check-file-deps` - Verify OCR dependencies
 3. `python run_mail2cal.py --process-files` - Extract events from files
 4. `python run_mail2cal.py --list-files` - Review processed files
@@ -303,8 +303,8 @@ python troubleshooting/test_limited.py
 ### Directory Structure for Files
 ```
 local_resources/
-├── Calendar_1/        # Events for Calendar 1 only
-├── Calendar_2/        # Events for Calendar 2 only  
+├── Calendar_1_Pre-Kinder_B/  # Events for Calendar 1 (Pre-Kinder B) only
+├── Calendar_2_Kinder_C/     # Events for Calendar 2 (Kinder C) only
 └── Both/             # Events for both calendars
 ```
 7. **Tracking**: Record email-to-event mappings to prevent duplicates

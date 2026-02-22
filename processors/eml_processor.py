@@ -16,25 +16,21 @@ from email.mime.text import MIMEText
 import base64
 from bs4 import BeautifulSoup
 
+from core.config import get_calendar_mapping
+
 
 class EMLProcessor:
     """
     Processes local .eml files to extract calendar events
     Treats .eml files exactly like Gmail emails using the same AI parsing
     """
-    
+
     def __init__(self, mail2cal_instance, base_directory: str = "local_resources"):
         self.mail2cal = mail2cal_instance
         self.base_directory = Path(base_directory)
         self.eml_mappings_file = "eml_event_mappings.json"
         self.eml_mappings = self._load_eml_mappings()
-        
-        # Calendar directory mapping
-        self.calendar_mapping = {
-            "Calendar_1": self.mail2cal.config['calendars']['calendar_id_1'],
-            "Calendar_2": self.mail2cal.config['calendars']['calendar_id_2'],
-            "Both": "both_calendars"  # For events that should go to both calendars
-        }
+        self.calendar_mapping = get_calendar_mapping()
         
         print(f"[*] EML processor initialized with base directory: {self.base_directory}")
     
@@ -325,15 +321,14 @@ class EMLProcessor:
     
     def _get_target_calendars(self, calendar_name: str) -> List[str]:
         """Get target calendar IDs based on directory name"""
-        if calendar_name == "Calendar_1":
-            return [self.calendar_mapping["Calendar_1"]]
-        elif calendar_name == "Calendar_2":
-            return [self.calendar_mapping["Calendar_2"]]
-        elif calendar_name == "Both":
-            return [self.calendar_mapping["Calendar_1"], self.calendar_mapping["Calendar_2"]]
-        else:
-            # Default to both calendars for unknown directories
-            return [self.calendar_mapping["Calendar_1"], self.calendar_mapping["Calendar_2"]]
+        both_ids = [v for _, v in self.calendar_mapping.items() if v != 'both_calendars']
+        if calendar_name in self.calendar_mapping:
+            value = self.calendar_mapping[calendar_name]
+            if value == 'both_calendars':
+                return both_ids
+            return [value]
+        # Default to both calendars for unknown directories
+        return both_ids
     
     def delete_eml_events(self, file_path: str) -> bool:
         """Delete events associated with an EML file (when file is removed)"""

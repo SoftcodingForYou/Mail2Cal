@@ -12,10 +12,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Configuration - Load from secure storage
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_ids
 
-GOOGLE_CALENDAR_ID = get_secure_credential('GOOGLE_CALENDAR_ID_1')  # Default to Calendar 1
+GOOGLE_CALENDAR_ID = get_calendar_ids()[0]  # Default to Calendar 1 (Pre-Kinder B)
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def authenticate():

@@ -16,6 +16,8 @@ import mimetypes
 import base64
 from bs4 import BeautifulSoup
 
+from core.config import get_calendar_mapping
+
 # OCR and image processing
 try:
     from PIL import Image
@@ -72,12 +74,7 @@ class FileEventProcessor:
         self.file_mappings_file = "file_event_mappings.json"
         self.file_mappings = self._load_file_mappings()
         
-        # Calendar directory mapping
-        self.calendar_mapping = {
-            "Calendar_1": self.mail2cal.config['calendars']['calendar_id_1'],
-            "Calendar_2": self.mail2cal.config['calendars']['calendar_id_2'],
-            "Both": "both_calendars"  # For events that should go to both calendars
-        }
+        self.calendar_mapping = get_calendar_mapping()
         
         print(f"[*] File processor initialized with base directory: {self.base_directory}")
     
@@ -463,15 +460,14 @@ class FileEventProcessor:
     
     def _get_target_calendars(self, calendar_name: str) -> List[str]:
         """Get target calendar IDs based on directory name"""
-        if calendar_name == "Calendar_1":
-            return [self.calendar_mapping["Calendar_1"]]
-        elif calendar_name == "Calendar_2":
-            return [self.calendar_mapping["Calendar_2"]]
-        elif calendar_name == "Both":
-            return [self.calendar_mapping["Calendar_1"], self.calendar_mapping["Calendar_2"]]
-        else:
-            # Default to both calendars for unknown directories
-            return [self.calendar_mapping["Calendar_1"], self.calendar_mapping["Calendar_2"]]
+        both_ids = [v for _, v in self.calendar_mapping.items() if v != 'both_calendars']
+        if calendar_name in self.calendar_mapping:
+            value = self.calendar_mapping[calendar_name]
+            if value == 'both_calendars':
+                return both_ids
+            return [value]
+        # Default to both calendars for unknown directories
+        return both_ids
     
     def delete_file_events(self, file_path: str) -> bool:
         """Delete events associated with a file (when file is removed)"""

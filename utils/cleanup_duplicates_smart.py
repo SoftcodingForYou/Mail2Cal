@@ -17,7 +17,7 @@ from googleapiclient.errors import HttpError
 from core.smart_event_merger import SmartEventMerger
 from core.event_tracker import EventTracker
 from core.token_tracker import TokenTracker
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_ids, get_ai_config
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -46,8 +46,7 @@ def get_all_mail2cal_events(service):
     """Get all Mail2Cal events from both calendars"""
     
     # Load calendar IDs
-    calendar_id_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')
-    calendar_id_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')
+    calendar_id_1, calendar_id_2 = get_calendar_ids()
     
     all_events = []
     
@@ -398,17 +397,11 @@ def main():
     print("[+] Authenticated with Google Calendar")
 
     # Get calendar IDs
-    calendar_id_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')
-    calendar_id_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')
+    calendar_id_1, calendar_id_2 = get_calendar_ids()
     calendar_ids = [calendar_id_1, calendar_id_2]
 
     # Initialize AI components (create once, use for both detection and merging)
-    ai_config = {
-        'provider': 'anthropic',
-        'api_key_env_var': 'ANTHROPIC_API_KEY',
-        'model': get_secure_credential('AI_MODEL'),
-        'model_cheap': get_secure_credential('AI_MODEL_CHEAP')
-    }
+    ai_config = get_ai_config()
     event_tracker = EventTracker('event_mappings.json')
     token_tracker = TokenTracker()
     smart_merger = SmartEventMerger(ai_config, event_tracker, token_tracker)

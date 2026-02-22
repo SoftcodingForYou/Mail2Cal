@@ -9,17 +9,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pickle
 from googleapiclient.discovery import build
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_ids
 
 def get_event_details():
     """Get detailed information about the plumavit event"""
-    
+
     # Load configuration
     try:
-        config = {
-            'calendar_id_1': get_secure_credential('GOOGLE_CALENDAR_ID_1'),
-            'calendar_id_2': get_secure_credential('GOOGLE_CALENDAR_ID_2')
-        }
+        cal_id_1, cal_id_2 = get_calendar_ids()
+        config = {'calendar_id_1': cal_id_1, 'calendar_id_2': cal_id_2}
     except Exception as e:
         print(f"[!] Error loading configuration: {e}")
         return

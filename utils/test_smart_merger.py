@@ -38,22 +38,22 @@ def test_smart_merger():
             'description': 'Celebración del Día de la Familia para nivel Play group y Jardín. Deben asistir 2 personas significativas por estudiante y traer una foto familiar 10x13.',
             'start_time': '2025-07-30T08:30:00',
             'source_email_subject': 'Cierre de semana/ Cronograma',
-            'source_email_sender': 'Rosa Paola Contreras Ulloa <rosa.contreras@colegiomanquecura.cl>',
+            'source_email_sender': 'Teacher 1 <teacher1@school.example.com>',
             'source_email_date': 'Fri, 11 Jul 2025 16:38:43 +0000'
         }
     ]
     
     source_email = {
         'subject': 'Cierre de semana/ Cronograma',
-        'sender': 'Rosa Paola Contreras Ulloa <rosa.contreras@colegiomanquecura.cl>',
+        'sender': 'Teacher 1 <teacher1@school.example.com>',
         'date': 'Fri, 11 Jul 2025 16:38:43 +0000'
     }
-    
+
     # Add a similar event to the tracker to simulate existing event
     existing_email = {
         'id': 'test_email_1',
         'subject': 'Cierre de semana/ Cronograma 28 de julio al 1 de agosto',
-        'sender': 'Rosa Paola Contreras Ulloa <rosa.contreras@colegiomanquecura.cl>',
+        'sender': 'Teacher 1 <teacher1@school.example.com>',
         'date': 'Fri, 25 Jul 2025 16:39:28 +0000',
         'body': 'Test email body'
     }

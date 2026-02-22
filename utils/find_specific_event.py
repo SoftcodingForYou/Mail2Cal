@@ -12,25 +12,18 @@ import json
 import pickle
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_and_teacher_config
 
 class EventFinder:
     def __init__(self):
         """Initialize the event finder"""
         self.calendar_service = None
         self.config = self.load_configuration()
-        
+
     def load_configuration(self):
         """Load configuration from secure credentials"""
         try:
-            config = {
-                'calendar_id_1': get_secure_credential('GOOGLE_CALENDAR_ID_1'),
-                'calendar_id_2': get_secure_credential('GOOGLE_CALENDAR_ID_2'),
-                'teacher_1_email': get_secure_credential('TEACHER_1_EMAIL'),
-                'teacher_2_email': get_secure_credential('TEACHER_2_EMAIL'),
-                'teacher_3_email': get_secure_credential('TEACHER_3_EMAIL'),
-                'teacher_4_email': get_secure_credential('TEACHER_4_EMAIL')
-            }
+            config = get_calendar_and_teacher_config()
             print("[+] Configuration loaded successfully")
             return config
         except Exception as e:
@@ -141,23 +134,23 @@ class EventFinder:
         if self.config['teacher_1_email'].lower() in sender_lower:
             return {
                 'type': 'teacher_1',
-                'name': 'Rosa',
-                'description': 'Rosa (Calendar 1 only)',
+                'name': 'Teacher 1',
+                'description': 'Teacher 1 (Calendar 1 only)',
                 'should_be_in': ['Calendar 1']
             }
         elif self.config['teacher_2_email'].lower() in sender_lower:
             return {
-                'type': 'teacher_2', 
-                'name': 'Karla',
-                'description': 'Karla (Calendar 2 only)',
+                'type': 'teacher_2',
+                'name': 'Teacher 2',
+                'description': 'Teacher 2 (Calendar 2 only)',
                 'should_be_in': ['Calendar 2']
             }
-        elif (self.config['teacher_3_email'].lower() in sender_lower or 
+        elif (self.config['teacher_3_email'].lower() in sender_lower or
               self.config['teacher_4_email'].lower() in sender_lower):
             return {
                 'type': 'teacher_3_4',
-                'name': 'Miriam/Lisette',
-                'description': 'Miriam/Lisette (Both calendars)',
+                'name': 'Teacher 3/4',
+                'description': 'Teacher 3/4 (Both calendars)',
                 'should_be_in': ['Calendar 1', 'Calendar 2']
             }
         else:

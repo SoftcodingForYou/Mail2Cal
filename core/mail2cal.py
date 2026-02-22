@@ -3,47 +3,6 @@
 Mail2Cal - AI-powered email to calendar converter for school communications
 """
 
-# =============================================================================
-# SECURE CONFIGURATION - Credentials loaded from Google Sheets
-# =============================================================================
-
-from auth.secure_credentials import get_secure_credential
-
-# Load credentials securely from Google Sheets
-try:
-    ANTHROPIC_API_KEY = get_secure_credential('ANTHROPIC_API_KEY')
-    GOOGLE_CALENDAR_ID_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')  # Calendar 1 (Class A)
-    GOOGLE_CALENDAR_ID_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')  # Calendar 2 (Class B)
-    GMAIL_ADDRESS = get_secure_credential('GMAIL_ADDRESS')
-    EMAIL_SENDER_FILTER = get_secure_credential('EMAIL_SENDER_FILTER')
-    TEACHER_1_EMAIL = get_secure_credential('TEACHER_1_EMAIL')  # Teacher 1 → Calendar 1
-    TEACHER_2_EMAIL = get_secure_credential('TEACHER_2_EMAIL')  # Teacher 2 → Calendar 2
-    TEACHER_3_EMAIL = get_secure_credential('TEACHER_3_EMAIL')  # Teacher 3 (Afterschool) → Both Calendars
-    TEACHER_4_EMAIL = get_secure_credential('TEACHER_4_EMAIL')  # Teacher 4 (Afterschool) → Both Calendars
-    AI_MODEL = get_secure_credential('AI_MODEL')
-    AI_MODEL_CHEAP = get_secure_credential('AI_MODEL_CHEAP')
-    DEFAULT_MONTHS_BACK = float(get_secure_credential('DEFAULT_MONTHS_BACK'))
-
-    # Build comprehensive sender filter combining wildcard and exact teacher emails
-    # Gmail's wildcard search (from:*domain*) can be slow to index recent emails from specific addresses
-    # Using exact email addresses ensures immediate search results for configured teachers
-    teacher_emails = [TEACHER_1_EMAIL, TEACHER_2_EMAIL, TEACHER_3_EMAIL, TEACHER_4_EMAIL]
-    teacher_filter = " OR ".join([f"from:{email}" for email in teacher_emails])
-    # Combine with original filter to catch both wildcards (display names) and exact addresses
-    EMAIL_SENDER_FILTER = f"({EMAIL_SENDER_FILTER} OR {teacher_filter})"
-
-    print("[+] Credentials loaded securely from Google Sheets")
-    print(f"[+] Enhanced filter with {len(teacher_emails)} exact teacher emails (avoids wildcard indexing delays)")
-    
-except Exception as e:
-    print(f"[!] Error loading secure credentials: {e}")
-    print("[!] Please ensure your Google Apps Script is deployed and accessible")
-    raise SystemExit("Cannot continue without proper credentials")
-
-# =============================================================================
-# DO NOT MODIFY BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
-# =============================================================================
-
 import os
 import yaml
 import pickle
@@ -59,6 +18,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from .config import get_config
 from .ai_parser import AIEmailParser
 from .event_tracker import EventTracker
 from .smart_event_merger import SmartEventMerger
@@ -74,48 +34,11 @@ SCOPES = [
 
 class Mail2Cal:
     def __init__(self):
-        """Initialize Mail2Cal with configuration from script variables"""
-        # Validate configuration
-        if ANTHROPIC_API_KEY == "your-anthropic-api-key-here":
-            raise ValueError("Please set ANTHROPIC_API_KEY at the top of this script")
-        if GOOGLE_CALENDAR_ID_1 == "your-calendar-id-here" or GOOGLE_CALENDAR_ID_2 == "your-calendar-id-here":
-            raise ValueError("Please set both GOOGLE_CALENDAR_ID_1 and GOOGLE_CALENDAR_ID_2 at the top of this script")
-        
+        """Initialize Mail2Cal with configuration from centralized config"""
+        self.config = get_config()
+
         # Set environment variable for AI API
-        os.environ['ANTHROPIC_API_KEY'] = ANTHROPIC_API_KEY
-        
-        # Build configuration from script variables
-        self.config = {
-            'gmail': {
-                'user_id': GMAIL_ADDRESS,
-                'sender_filter': EMAIL_SENDER_FILTER
-            },
-            'calendars': {
-                'calendar_id_1': GOOGLE_CALENDAR_ID_1,  # Calendar 1
-                'calendar_id_2': GOOGLE_CALENDAR_ID_2,  # Calendar 2
-                'teacher_1_email': TEACHER_1_EMAIL,     # Teacher 1 → Calendar 1
-                'teacher_2_email': TEACHER_2_EMAIL,     # Teacher 2 → Calendar 2
-                'teacher_3_email': TEACHER_3_EMAIL,     # Teacher 3 (Afterschool) → Both
-                'teacher_4_email': TEACHER_4_EMAIL      # Teacher 4 (Afterschool) → Both
-            },
-            'date_range': {
-                'default_months_back': DEFAULT_MONTHS_BACK
-            },
-            'ai_service': {
-                'provider': 'anthropic',
-                'api_key_env_var': 'ANTHROPIC_API_KEY',
-                'model': AI_MODEL,
-                'model_cheap': AI_MODEL_CHEAP
-            },
-            'event_tracking': {
-                'storage_file': 'event_mappings.json'
-            },
-            'pdf_processing': {
-                'enabled': True,  # Enable PDF attachment processing
-                'max_file_size_mb': 25,  # Maximum PDF file size to process
-                'cache_extractions': True  # Cache PDF text extractions
-            }
-        }
+        os.environ['ANTHROPIC_API_KEY'] = self.config['ai_service']['api_key']
         
         self.gmail_service = None
         self.calendar_service = None

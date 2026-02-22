@@ -10,21 +10,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pickle
 from googleapiclient.discovery import build
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_ids
 
 class EventDeleter:
     def __init__(self):
         """Initialize the event deleter"""
         self.calendar_service = None
         self.config = self.load_configuration()
-        
+
     def load_configuration(self):
         """Load configuration from secure credentials"""
         try:
-            config = {
-                'calendar_id_1': get_secure_credential('GOOGLE_CALENDAR_ID_1'),
-                'calendar_id_2': get_secure_credential('GOOGLE_CALENDAR_ID_2')
-            }
+            cal_id_1, cal_id_2 = get_calendar_ids()
+            config = {'calendar_id_1': cal_id_1, 'calendar_id_2': cal_id_2}
             print("[+] Configuration loaded successfully")
             return config
         except Exception as e:

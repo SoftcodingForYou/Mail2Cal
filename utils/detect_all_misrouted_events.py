@@ -13,7 +13,7 @@ import pickle
 import re
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
-from auth.secure_credentials import get_secure_credential
+from core.config import get_calendar_and_teacher_config
 
 class ComprehensiveMisrouteDetector:
     def __init__(self):
@@ -21,18 +21,11 @@ class ComprehensiveMisrouteDetector:
         self.calendar_service = None
         self.config = self.load_configuration()
         self.event_mappings = self.load_event_mappings()
-        
+
     def load_configuration(self):
         """Load configuration from secure credentials"""
         try:
-            config = {
-                'calendar_id_1': get_secure_credential('GOOGLE_CALENDAR_ID_1'),
-                'calendar_id_2': get_secure_credential('GOOGLE_CALENDAR_ID_2'),
-                'teacher_1_email': get_secure_credential('TEACHER_1_EMAIL'),
-                'teacher_2_email': get_secure_credential('TEACHER_2_EMAIL'),
-                'teacher_3_email': get_secure_credential('TEACHER_3_EMAIL'),
-                'teacher_4_email': get_secure_credential('TEACHER_4_EMAIL')
-            }
+            config = get_calendar_and_teacher_config()
             print("[+] Configuration loaded successfully")
             return config
         except Exception as e:
@@ -135,13 +128,13 @@ class ComprehensiveMisrouteDetector:
                     return self.identify_teacher_from_sender(sender)
         
         # Look for specific class-related keywords
-        calendar_1_keywords = ['kinder', 'pre-kinder', 'play group', 'jardin a', 'clase a']
-        calendar_2_keywords = ['jardin b', 'clase b', 'segundo grupo']
+        calendar_1_keywords = ['pre-kinder b', 'pre kinder b', 'play group', 'clase a']
+        calendar_2_keywords = ['kinder c', 'clase b', 'segundo grupo']
         
         if any(keyword in event_content for keyword in calendar_1_keywords):
-            return self.get_teacher_info('teacher_1')  # Assume Rosa for Calendar 1 specific content
+            return self.get_teacher_info('teacher_1')  # Calendar 1 specific content
         elif any(keyword in event_content for keyword in calendar_2_keywords):
-            return self.get_teacher_info('teacher_2')  # Assume Karla for Calendar 2 specific content
+            return self.get_teacher_info('teacher_2')  # Calendar 2 specific content
         
         # If we can't identify, assume it's a general event
         return self.get_teacher_info('other')
@@ -196,23 +189,23 @@ class ComprehensiveMisrouteDetector:
         teacher_info = {
             'teacher_1': {
                 'type': 'teacher_1',
-                'name': 'Rosa',
+                'name': 'Teacher 1',
                 'email': self.config['teacher_1_email'],
-                'description': 'Rosa (Calendar 1 only)',
+                'description': 'Teacher 1 (Calendar 1 only)',
                 'should_be_in': ['Calendar 1']
             },
             'teacher_2': {
                 'type': 'teacher_2',
-                'name': 'Karla',
+                'name': 'Teacher 2',
                 'email': self.config['teacher_2_email'],
-                'description': 'Karla (Calendar 2 only)',
+                'description': 'Teacher 2 (Calendar 2 only)',
                 'should_be_in': ['Calendar 2']
             },
             'teacher_3_4': {
                 'type': 'teacher_3_4',
-                'name': 'Miriam/Lisette',
+                'name': 'Teacher 3/4',
                 'email': f"{self.config['teacher_3_email']}/{self.config['teacher_4_email']}",
-                'description': 'Miriam/Lisette (Both calendars)',
+                'description': 'Teacher 3/4 (Both calendars)',
                 'should_be_in': ['Calendar 1', 'Calendar 2']
             },
             'other': {
@@ -314,9 +307,9 @@ class ComprehensiveMisrouteDetector:
         for cal_name, analysis in calendar_analysis.items():
             print(f"\n{cal_name}:")
             print(f"  Total Mail2Cal events: {analysis['total_events']}")
-            print(f"  Rosa events: {analysis['teacher_1_events']} {'(should be 0)' if cal_name == 'Calendar 2' else '(correct)'}")
-            print(f"  Karla events: {analysis['teacher_2_events']} {'(should be 0)' if cal_name == 'Calendar 1' else '(correct)'}")
-            print(f"  Miriam/Lisette events: {analysis['teacher_3_4_events']} (correct - can be in both)")
+            print(f"  Teacher 1 events: {analysis['teacher_1_events']} {'(should be 0)' if cal_name == 'Calendar 2' else '(correct)'}")
+            print(f"  Teacher 2 events: {analysis['teacher_2_events']} {'(should be 0)' if cal_name == 'Calendar 1' else '(correct)'}")
+            print(f"  Teacher 3/4 events: {analysis['teacher_3_4_events']} (correct - can be in both)")
             print(f"  Other events: {analysis['other_events']} (correct - can be in both)")
             print(f"  MISROUTED events: {analysis['misrouted_events']}")
         
@@ -386,10 +379,10 @@ class ComprehensiveMisrouteDetector:
         print("regardless of whether they have tracking data or not.")
         print()
         print("TEACHER ROUTING RULES:")
-        print(f"- Rosa ({self.config['teacher_1_email']}) -> Calendar 1 only")
-        print(f"- Karla ({self.config['teacher_2_email']}) -> Calendar 2 only")
-        print(f"- Miriam ({self.config['teacher_3_email']}) -> Both calendars")
-        print(f"- Lisette ({self.config['teacher_4_email']}) -> Both calendars")
+        print(f"- Teacher 1 ({self.config['teacher_1_email']}) -> Calendar 1 only")
+        print(f"- Teacher 2 ({self.config['teacher_2_email']}) -> Calendar 2 only")
+        print(f"- Teacher 3 ({self.config['teacher_3_email']}) -> Both calendars")
+        print(f"- Teacher 4 ({self.config['teacher_4_email']}) -> Both calendars")
         print()
         
         # Authenticate

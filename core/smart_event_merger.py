@@ -9,7 +9,7 @@ from datetime import datetime
 import anthropic
 import os
 import time
-from auth.secure_credentials import get_secure_credential
+from .config import get_ai_config
 
 
 class SmartEventMerger:
@@ -25,11 +25,7 @@ class SmartEventMerger:
         """Initialize AI client for semantic analysis"""
         provider = self.ai_config['provider']
         
-        # Use secure credentials system like other components
-        try:
-            api_key = get_secure_credential('ANTHROPIC_API_KEY')
-        except Exception as e:
-            raise ValueError(f"API key not found in secure credentials: {e}")
+        api_key = get_ai_config()['api_key']
         
         if provider == "anthropic":
             return anthropic.Anthropic(api_key=api_key)

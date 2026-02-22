@@ -64,3 +64,4 @@ IMPLEMENTATION_*.md
 
 # Additional files to scan
 local_resources/
+.claude/settings.local.json

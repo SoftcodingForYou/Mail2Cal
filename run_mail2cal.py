@@ -13,16 +13,15 @@ from utils.cleanup_duplicates_smart import main as cleanup_duplicates_smart
 from utils.check_calendar import check_recent_events
 from processors.file_event_processor import FileEventProcessor, check_file_processing_dependencies
 
-# Import credential function (actual loading happens in functions that need them)
-from auth.secure_credentials import get_secure_credential
+from core.config import get_config, get_calendar_ids
 
 def load_credentials():
     """Load credentials when actually needed"""
     try:
-        ANTHROPIC_API_KEY = get_secure_credential('ANTHROPIC_API_KEY')
-        GOOGLE_CALENDAR_ID_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')  # Calendar 1 (Class A)
-        GOOGLE_CALENDAR_ID_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')  # Calendar 2 (Class B)
-        return ANTHROPIC_API_KEY, GOOGLE_CALENDAR_ID_1, GOOGLE_CALENDAR_ID_2
+        cfg = get_config()
+        return (cfg['ai_service']['api_key'],
+                cfg['calendars']['calendar_id_1'],
+                cfg['calendars']['calendar_id_2'])
     except Exception as e:
         print(f"[!] Error loading credentials: {e}")
         print("[!] Please ensure your Google Apps Script is deployed and accessible")
@@ -199,8 +198,8 @@ def check_file_dependencies():
         print("\n[+] File processing is ready!")
         print("\nDirectory structure expected:")
         print("local_resources/")
-        print("|-- Calendar_1/     # Files for Calendar 1 only")
-        print("|-- Calendar_2/     # Files for Calendar 2 only")
+        print("|-- Calendar_1_Pre-Kinder_B/  # Files for Calendar 1 (Pre-Kinder B) only")
+        print("|-- Calendar_2_Kinder_C/      # Files for Calendar 2 (Kinder C) only")
         print("|-- Both/           # Files for both calendars")
         print("\nSupported formats: PDF, JPG, PNG, TIFF, BMP, EML")
     else:
