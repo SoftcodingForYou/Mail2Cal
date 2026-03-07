@@ -105,17 +105,21 @@ class ComprehensiveMisrouteDetector:
         event_description = event.get('description', '').lower()
         event_content = f"{event_title} {event_description}"
         
-        # Look for teacher name patterns in the content
-        teacher_patterns = {
-            'teacher_1': ['rosa', 'contreras'],
-            'teacher_2': ['karla', 'morales'],
-            'teacher_3': ['miriam', 'pacheco'],
-            'teacher_4': ['lisette', 'rios']
-        }
-        
-        for teacher_key, patterns in teacher_patterns.items():
-            if any(pattern in event_content for pattern in patterns):
-                return self.get_teacher_info(teacher_key)
+        # Build name patterns dynamically from configured email addresses
+        # e.g. "tamara.valdes@..." → ['tamara', 'valdes']
+        cal1_patterns = [
+            part for e in self.config.get('calendar_1_emails', [])
+            for part in e.split('@')[0].split('.') if len(part) > 3
+        ]
+        cal2_patterns = [
+            part for e in self.config.get('calendar_2_emails', [])
+            for part in e.split('@')[0].split('.') if len(part) > 3
+        ]
+
+        if any(p in event_content for p in cal1_patterns):
+            return self.get_teacher_info('calendar_1')
+        elif any(p in event_content for p in cal2_patterns):
+            return self.get_teacher_info('calendar_2')
         
         # For untracked events, try to match with tracked events of the same title
         # This helps identify misrouted events that lost their tracking
@@ -140,16 +144,15 @@ class ComprehensiveMisrouteDetector:
         return self.get_teacher_info('other')
     
     def identify_teacher_from_sender(self, sender):
-        """Identify teacher from email sender"""
+        """Identify calendar group from email sender"""
         sender_lower = sender.lower()
-        
-        if self.config['teacher_1_email'].lower() in sender_lower:
-            return self.get_teacher_info('teacher_1')
-        elif self.config['teacher_2_email'].lower() in sender_lower:
-            return self.get_teacher_info('teacher_2')
-        elif (self.config['teacher_3_email'].lower() in sender_lower or 
-              self.config['teacher_4_email'].lower() in sender_lower):
-            return self.get_teacher_info('teacher_3_4')
+        cal1_emails = [e.lower() for e in self.config.get('calendar_1_emails', [])]
+        cal2_emails = [e.lower() for e in self.config.get('calendar_2_emails', [])]
+
+        if any(e in sender_lower for e in cal1_emails):
+            return self.get_teacher_info('calendar_1')
+        elif any(e in sender_lower for e in cal2_emails):
+            return self.get_teacher_info('calendar_2')
         else:
             return self.get_teacher_info('other')
     
@@ -185,28 +188,23 @@ class ComprehensiveMisrouteDetector:
         return False
     
     def get_teacher_info(self, teacher_type):
-        """Get teacher information structure"""
+        """Get sender group information structure"""
+        cal1_emails = self.config.get('calendar_1_emails', [])
+        cal2_emails = self.config.get('calendar_2_emails', [])
         teacher_info = {
-            'teacher_1': {
-                'type': 'teacher_1',
-                'name': 'Teacher 1',
-                'email': self.config['teacher_1_email'],
-                'description': 'Teacher 1 (Calendar 1 only)',
+            'calendar_1': {
+                'type': 'calendar_1',
+                'name': 'Calendar 1 sender',
+                'email': ', '.join(cal1_emails) if cal1_emails else 'N/A',
+                'description': 'Calendar 1 sender (Calendar 1 only)',
                 'should_be_in': ['Calendar 1']
             },
-            'teacher_2': {
-                'type': 'teacher_2',
-                'name': 'Teacher 2',
-                'email': self.config['teacher_2_email'],
-                'description': 'Teacher 2 (Calendar 2 only)',
+            'calendar_2': {
+                'type': 'calendar_2',
+                'name': 'Calendar 2 sender',
+                'email': ', '.join(cal2_emails) if cal2_emails else 'N/A',
+                'description': 'Calendar 2 sender (Calendar 2 only)',
                 'should_be_in': ['Calendar 2']
-            },
-            'teacher_3_4': {
-                'type': 'teacher_3_4',
-                'name': 'Teacher 3/4',
-                'email': f"{self.config['teacher_3_email']}/{self.config['teacher_4_email']}",
-                'description': 'Teacher 3/4 (Both calendars)',
-                'should_be_in': ['Calendar 1', 'Calendar 2']
             },
             'other': {
                 'type': 'other',
@@ -239,9 +237,8 @@ class ComprehensiveMisrouteDetector:
             
             calendar_analysis[cal_name] = {
                 'total_events': len(events),
-                'teacher_1_events': 0,
-                'teacher_2_events': 0,
-                'teacher_3_4_events': 0,
+                'calendar_1_events': 0,
+                'calendar_2_events': 0,
                 'other_events': 0,
                 'misrouted_events': 0
             }
@@ -269,13 +266,11 @@ class ComprehensiveMisrouteDetector:
                 teacher_info = self.identify_teacher_from_event_content(event)
                 teacher_type = teacher_info['type']
                 
-                # Count events by teacher
-                if teacher_type == 'teacher_1':
-                    calendar_analysis[cal_name]['teacher_1_events'] += 1
-                elif teacher_type == 'teacher_2':
-                    calendar_analysis[cal_name]['teacher_2_events'] += 1
-                elif teacher_type == 'teacher_3_4':
-                    calendar_analysis[cal_name]['teacher_3_4_events'] += 1
+                # Count events by calendar group
+                if teacher_type == 'calendar_1':
+                    calendar_analysis[cal_name]['calendar_1_events'] += 1
+                elif teacher_type == 'calendar_2':
+                    calendar_analysis[cal_name]['calendar_2_events'] += 1
                 else:
                     calendar_analysis[cal_name]['other_events'] += 1
                 
@@ -307,9 +302,10 @@ class ComprehensiveMisrouteDetector:
         for cal_name, analysis in calendar_analysis.items():
             print(f"\n{cal_name}:")
             print(f"  Total Mail2Cal events: {analysis['total_events']}")
-            print(f"  Teacher 1 events: {analysis['teacher_1_events']} {'(should be 0)' if cal_name == 'Calendar 2' else '(correct)'}")
-            print(f"  Teacher 2 events: {analysis['teacher_2_events']} {'(should be 0)' if cal_name == 'Calendar 1' else '(correct)'}")
-            print(f"  Teacher 3/4 events: {analysis['teacher_3_4_events']} (correct - can be in both)")
+            print(f"  Calendar 1 sender events: {analysis['calendar_1_events']} "
+                  f"{'(should be 0)' if cal_name == 'Calendar 2' else '(correct)'}")
+            print(f"  Calendar 2 sender events: {analysis['calendar_2_events']} "
+                  f"{'(should be 0)' if cal_name == 'Calendar 1' else '(correct)'}")
             print(f"  Other events: {analysis['other_events']} (correct - can be in both)")
             print(f"  MISROUTED events: {analysis['misrouted_events']}")
         

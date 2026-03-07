@@ -78,46 +78,38 @@ class TeacherEventCleanup:
             return []
     
     def identify_teacher_from_event(self, event):
-        """Try to identify which teacher created an event based on metadata"""
-        # Check extended properties for source email
+        """Try to identify which calendar group created an event based on metadata"""
         extended_props = event.get('extendedProperties', {}).get('private', {})
         source_email_id = extended_props.get('mail2cal_source_email_id', '')
-        
-        # Check event description for email patterns
         description = event.get('description', '')
-        
-        # Check for teacher email patterns
-        teacher_emails = {
-            'teacher_1': self.config['teacher_1_email'],
-            'teacher_2': self.config['teacher_2_email'],
-            'teacher_3': self.config['teacher_3_email'],
-            'teacher_4': self.config['teacher_4_email']
-        }
-        
-        # Try to match based on description or metadata
-        for teacher_key, teacher_email in teacher_emails.items():
-            teacher_domain = teacher_email.split('@')[0] if '@' in teacher_email else teacher_email
-            
-            if (teacher_email.lower() in description.lower() or 
-                teacher_domain.lower() in description.lower() or
-                teacher_email.lower() in source_email_id.lower()):
-                return teacher_key
-        
+
+        cal1_emails = self.config.get('calendar_1_emails', [])
+        cal2_emails = self.config.get('calendar_2_emails', [])
+
+        for email_addr in cal1_emails:
+            username = email_addr.split('@')[0] if '@' in email_addr else email_addr
+            if (email_addr.lower() in description.lower() or
+                    username.lower() in description.lower() or
+                    email_addr.lower() in source_email_id.lower()):
+                return 'calendar_1'
+
+        for email_addr in cal2_emails:
+            username = email_addr.split('@')[0] if '@' in email_addr else email_addr
+            if (email_addr.lower() in description.lower() or
+                    username.lower() in description.lower() or
+                    email_addr.lower() in source_email_id.lower()):
+                return 'calendar_2'
+
         return None
     
     def should_event_be_in_calendar(self, teacher_key, calendar_id):
-        """Check if a teacher's events should be in a specific calendar"""
-        if teacher_key == 'teacher_1':
-            # Teacher 1 should only be in Calendar 1
+        """Check if a sender's events should be in a specific calendar"""
+        if teacher_key == 'calendar_1':
             return calendar_id == self.config['calendar_id_1']
-        elif teacher_key == 'teacher_2':
-            # Teacher 2 should only be in Calendar 2
+        elif teacher_key == 'calendar_2':
             return calendar_id == self.config['calendar_id_2']
-        elif teacher_key in ['teacher_3', 'teacher_4']:
-            # Teachers 3 & 4 (afterschool) should be in both calendars
-            return True
         else:
-            # Unknown teacher or other senders - can be in both
+            # Unknown sender → allowed in both calendars
             return True
     
     def analyze_misrouted_events(self, days_back=30):
@@ -159,13 +151,11 @@ class TeacherEventCleanup:
         return misrouted_events
     
     def get_correct_calendars_for_teacher(self, teacher_key):
-        """Get the correct calendar(s) for a teacher"""
-        if teacher_key == 'teacher_1':
+        """Get the correct calendar(s) for a sender group"""
+        if teacher_key == 'calendar_1':
             return "Calendar 1 only"
-        elif teacher_key == 'teacher_2':
+        elif teacher_key == 'calendar_2':
             return "Calendar 2 only"
-        elif teacher_key in ['teacher_3', 'teacher_4']:
-            return "Both calendars"
         else:
             return "Both calendars (default)"
     
@@ -237,11 +227,12 @@ class TeacherEventCleanup:
         print("This tool finds and removes events created by teachers in calendars")
         print("where they should not have events based on your configuration.")
         print()
-        print("TEACHER ROUTING RULES:")
-        print(f"- Teacher 1 ({self.config['teacher_1_email']}) → Calendar 1 only")
-        print(f"- Teacher 2 ({self.config['teacher_2_email']}) → Calendar 2 only")
-        print(f"- Teacher 3 ({self.config['teacher_3_email']}) → Both calendars")
-        print(f"- Teacher 4 ({self.config['teacher_4_email']}) → Both calendars")
+        print("SENDER ROUTING RULES:")
+        for addr in self.config.get('calendar_1_emails', []):
+            print(f"- {addr} → Calendar 1 only")
+        for addr in self.config.get('calendar_2_emails', []):
+            print(f"- {addr} → Calendar 2 only")
+        print(f"- (all other senders) → Both calendars (default)")
         print()
         
         # Authenticate

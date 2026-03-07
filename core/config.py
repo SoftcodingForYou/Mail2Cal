@@ -4,7 +4,8 @@ Centralized configuration for Mail2Cal.
 All credential loading happens here - other modules import from this.
 """
 
-from auth.secure_credentials import get_secure_credential
+import re
+from auth.secure_credentials import get_secure_credential, get_credential_manager
 
 _config_cache = None
 
@@ -19,20 +20,32 @@ def _load_all():
         cal_id_1 = get_secure_credential('GOOGLE_CALENDAR_ID_1')
         cal_id_2 = get_secure_credential('GOOGLE_CALENDAR_ID_2')
 
-        teacher_1 = get_secure_credential('TEACHER_1_EMAIL')
-        teacher_2 = get_secure_credential('TEACHER_2_EMAIL')
-        teacher_3 = get_secure_credential('TEACHER_3_EMAIL')
-        teacher_4 = get_secure_credential('TEACHER_4_EMAIL')
-
         gmail_address = get_secure_credential('GMAIL_ADDRESS')
         sender_filter = get_secure_credential('EMAIL_SENDER_FILTER')
 
-        # Build enhanced sender filter combining wildcard and exact teacher emails
-        # Gmail's wildcard search (from:*domain*) can be slow to index recent emails
-        # Using exact email addresses ensures immediate search results
-        teacher_emails = [teacher_1, teacher_2, teacher_3, teacher_4]
-        teacher_filter = " OR ".join([f"from:{e}" for e in teacher_emails])
-        enhanced_sender_filter = f"({sender_filter} OR {teacher_filter})"
+        # Dynamically discover all CALENDAR_N_Mail_X email keys from the spreadsheet.
+        # This means you can add or remove emails in the sheet without touching this code.
+        all_creds = get_credential_manager().get_all_credentials()
+        cal_mail_pattern = re.compile(r'^CALENDAR_(\d+)_Mail_\d+$')
+        calendar_emails: dict = {}
+        for key, value in sorted(all_creds.items()):
+            m = cal_mail_pattern.match(key)
+            if m:
+                cal_num = int(m.group(1))
+                calendar_emails.setdefault(cal_num, []).append(value)
+
+        calendar_1_emails = calendar_emails.get(1, [])
+        calendar_2_emails = calendar_emails.get(2, [])
+        all_mapped_emails = calendar_1_emails + calendar_2_emails
+
+        # Build enhanced sender filter combining wildcard and all known calendar emails.
+        # Gmail's wildcard search (from:*domain*) can be slow to index recent emails;
+        # exact addresses ensure immediate search results.
+        if all_mapped_emails:
+            email_filter = " OR ".join(f"from:{e}" for e in all_mapped_emails)
+            enhanced_sender_filter = f"({sender_filter} OR {email_filter})"
+        else:
+            enhanced_sender_filter = sender_filter
 
         anthropic_key = get_secure_credential('ANTHROPIC_API_KEY')
         ai_model = get_secure_credential('AI_MODEL')
@@ -43,10 +56,8 @@ def _load_all():
             'calendars': {
                 'calendar_id_1': cal_id_1,
                 'calendar_id_2': cal_id_2,
-                'teacher_1_email': teacher_1,
-                'teacher_2_email': teacher_2,
-                'teacher_3_email': teacher_3,
-                'teacher_4_email': teacher_4,
+                'calendar_1_emails': calendar_1_emails,
+                'calendar_2_emails': calendar_2_emails,
             },
             'gmail': {
                 'user_id': gmail_address,
@@ -77,7 +88,9 @@ def _load_all():
             },
         }
         print("[+] Credentials loaded securely from Google Sheets")
-        print(f"[+] Enhanced filter with {len(teacher_emails)} exact teacher emails (avoids wildcard indexing delays)")
+        print(f"[+] Loaded {len(calendar_1_emails)} emails for Calendar 1, "
+              f"{len(calendar_2_emails)} emails for Calendar 2 "
+              f"({len(all_mapped_emails)} total mapped emails)")
         return _config_cache
 
     except Exception as e:
@@ -99,7 +112,7 @@ def get_calendar_ids():
 
 
 def get_calendar_and_teacher_config():
-    """Return the calendars sub-dict (IDs + teacher emails).
+    """Return the calendars sub-dict (IDs + calendar_1_emails / calendar_2_emails lists).
     For utils that need routing info."""
     return _load_all()['calendars']
 

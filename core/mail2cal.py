@@ -252,82 +252,49 @@ class Mail2Cal:
     def get_sender_type(self, email: Dict) -> str:
         """Determine sender type for AI parsing context"""
         sender = email.get('sender', '').lower()
-        
-        if self.config['calendars']['teacher_1_email'] in sender:
-            return 'teacher_1'  # Teacher 1 → Calendar 1 (8:00 AM default)
-        elif self.config['calendars']['teacher_2_email'] in sender:
-            return 'teacher_2'  # Teacher 2 → Calendar 2 (8:00 AM default)
-        elif (self.config['calendars']['teacher_3_email'] in sender or 
-              self.config['calendars']['teacher_4_email'] in sender):
-            return 'afterschool'  # Afterschool teachers 3&4 (1:00 PM default)
+        cal1_emails = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
+        cal2_emails = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+
+        if any(e in sender for e in cal1_emails):
+            return 'calendar_1'  # Calendar 1 sender (8:00 AM default)
+        elif any(e in sender for e in cal2_emails):
+            return 'calendar_2'  # Calendar 2 sender (8:00 AM default)
         else:
-            return 'other'  # Other school senders (all-day default)
+            return 'other'  # Other senders (all-day default)
     
     def get_target_calendars(self, email: Dict) -> List[str]:
-        """Determine which calendar(s) to use based on email sender"""
+        """Determine which calendar(s) to use based on email sender.
+
+        Routing rules (driven entirely by CALENDAR_N_Mail_X keys in the spreadsheet):
+          - Sender in calendar_1_emails → Calendar 1 only
+          - Sender in calendar_2_emails → Calendar 2 only
+          - Unknown sender              → Both calendars (safe default)
+        """
         sender = email.get('sender', '').lower()
-        
-        # ENHANCED DEBUG LOGGING
+
         print(f"[DEBUG] === ROUTING DECISION DEBUG ===")
         print(f"[DEBUG] Raw sender: {email.get('sender', '')}")
         print(f"[DEBUG] Sender (lowercase): {sender}")
-        
-        # Check for placeholder/unconfigured teacher emails
-        teacher_emails = [
-            self.config['calendars']['teacher_1_email'],
-            self.config['calendars']['teacher_2_email'],
-            self.config['calendars']['teacher_3_email'],
-            self.config['calendars']['teacher_4_email']
-        ]
-        
-        # ENHANCED DEBUG: Show all configured teacher emails
-        print(f"[DEBUG] Configured teacher emails:")
-        print(f"[DEBUG]   Teacher 1: {self.config['calendars']['teacher_1_email']}")
-        print(f"[DEBUG]   Teacher 2: {self.config['calendars']['teacher_2_email']}")
-        print(f"[DEBUG]   Teacher 3: {self.config['calendars']['teacher_3_email']}")
-        print(f"[DEBUG]   Teacher 4: {self.config['calendars']['teacher_4_email']}")
-        
-        # Warn if teacher emails appear to be unconfigured
-        unconfigured = [email for email in teacher_emails if 'example.com' in email or 'teacher' in email.lower()]
-        if unconfigured:
-            print(f"[!] WARNING: Some teacher emails appear unconfigured: {unconfigured}")
-            print(f"[!] This may cause incorrect calendar routing. See SETUP_GUIDE.md for configuration.")
-        
-        # ENHANCED DEBUG: Test each matching condition explicitly
-        teacher_1_email_lower = self.config['calendars']['teacher_1_email'].lower()
-        teacher_2_email_lower = self.config['calendars']['teacher_2_email'].lower()
-        teacher_3_email_lower = self.config['calendars']['teacher_3_email'].lower()
-        teacher_4_email_lower = self.config['calendars']['teacher_4_email'].lower()
-        
-        print(f"[DEBUG] Testing matches:")
-        print(f"[DEBUG]   '{teacher_1_email_lower}' in '{sender}': {teacher_1_email_lower in sender}")
-        print(f"[DEBUG]   '{teacher_2_email_lower}' in '{sender}': {teacher_2_email_lower in sender}")
-        print(f"[DEBUG]   '{teacher_3_email_lower}' in '{sender}': {teacher_3_email_lower in sender}")
-        print(f"[DEBUG]   '{teacher_4_email_lower}' in '{sender}': {teacher_4_email_lower in sender}")
-        
-        if teacher_1_email_lower in sender:
-            # Teacher 1 → Calendar 1 only
-            print(f"[DEBUG] MATCH: Teacher 1 -> Calendar 1 only")
+
+        cal1_emails = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
+        cal2_emails = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+
+        print(f"[DEBUG] Calendar 1 emails ({len(cal1_emails)}): {cal1_emails}")
+        print(f"[DEBUG] Calendar 2 emails ({len(cal2_emails)}): {cal2_emails}")
+
+        matched_cal1 = [e for e in cal1_emails if e in sender]
+        matched_cal2 = [e for e in cal2_emails if e in sender]
+
+        if matched_cal1:
+            print(f"[DEBUG] MATCH Calendar 1 ({matched_cal1[0]}) -> Calendar 1 only")
             return [self.config['calendars']['calendar_id_1']]
-        elif teacher_2_email_lower in sender:
-            # Teacher 2 → Calendar 2 only
-            print(f"[DEBUG] MATCH: Teacher 2 -> Calendar 2 only")
+        elif matched_cal2:
+            print(f"[DEBUG] MATCH Calendar 2 ({matched_cal2[0]}) -> Calendar 2 only")
             return [self.config['calendars']['calendar_id_2']]
-        elif (teacher_3_email_lower in sender or teacher_4_email_lower in sender):
-            # Afterschool teachers (3 & 4) → Both calendars
-            matched_teacher = "Teacher 3" if teacher_3_email_lower in sender else "Teacher 4"
-            print(f"[DEBUG] MATCH: {matched_teacher} -> Both calendars (afterschool)")
-            return [
-                self.config['calendars']['calendar_id_1'],
-                self.config['calendars']['calendar_id_2']
-            ]
         else:
-            # All other school senders → Both calendars
-            # Extract just email for cleaner logging
             email_part = sender.split('<')[-1].replace('>', '') if '<' in sender else sender
             print(f"[DEBUG] NO MATCH: Default routing -> Both calendars")
-            print(f"[!] No teacher match for {email_part} -> routing to both calendars")
-            print(f"[!] If this teacher should only use one calendar, configure their email in secure credentials")
+            print(f"[!] No calendar mapping for {email_part} -> routing to both calendars")
             return [
                 self.config['calendars']['calendar_id_1'],
                 self.config['calendars']['calendar_id_2']
@@ -644,18 +611,27 @@ class Mail2Cal:
                 print(f'[-] Error deleting calendar event: {error}')
                 return False
     
-    def run(self, days_back: int = None):
-        """Main execution method with intelligent processing"""
+    def run(self, days_back: int = None, max_emails: int = None):
+        """Main execution method with intelligent processing.
+
+        Args:
+            days_back: How many months back to fetch emails (None = use config default).
+            max_emails: If set, process only the first N emails (useful for testing).
+        """
         print("[*] Starting AI-powered Mail2Cal...")
-        
+
         # Authenticate
         print("[*] Authenticating with Google APIs...")
         self.authenticate()
-        
+
         # Fetch emails
         print("[*] Fetching emails from school...")
         emails = self.get_emails_from_date_range(days_back)
         print(f"[*] Found {len(emails)} emails")
+
+        if max_emails is not None and len(emails) > max_emails:
+            print(f"[*] Limiting to {max_emails} most recent emails (test mode)")
+            emails = emails[:max_emails]
         
         if not emails:
             print("[!] No emails found in the specified date range")

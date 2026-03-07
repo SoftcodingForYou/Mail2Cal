@@ -131,16 +131,10 @@ Respond with ONLY a JSON object (no other text):
         
         # Define default times based on sender type
         default_time_guidance = ""
-        if sender_type in ['teacher_1', 'teacher_2']:
+        if sender_type in ['calendar_1', 'calendar_2']:
             default_time_guidance = """
-HORARIO POR DEFECTO PARA EVENTOS SIN HORA ESPECIFICADA (PROFESORES 1 Y 2):
+HORARIO POR DEFECTO PARA EVENTOS SIN HORA ESPECIFICADA:
 - Si NO se especifica hora, establecer start_time como "08:00" y end_time como "10:00" (2 horas de duración)
-- Solo usar all_day: true si específicamente se menciona que es "todo el día" o similar
-"""
-        elif sender_type == 'afterschool':
-            default_time_guidance = """
-HORARIO POR DEFECTO PARA EVENTOS DE AFTERSCHOOL SIN HORA ESPECIFICADA (PROFESORES 3 Y 4):
-- Si NO se especifica hora, establecer start_time como "13:00" y end_time como "15:00" (2 horas de duración)
 - Solo usar all_day: true si específicamente se menciona que es "todo el día" o similar
 """
         else:

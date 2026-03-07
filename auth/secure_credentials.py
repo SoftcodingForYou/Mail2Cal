@@ -27,16 +27,13 @@ except ImportError:
     print("[!] Warning: Using fallback URL. Create 'secure_credentials_config.py' with your actual CREDENTIALS_URL")
 
 # Fallback to environment variables if Google Sheets is unavailable
+# Note: CALENDAR_N_Mail_X keys are dynamic and cannot be listed here statically.
 FALLBACK_CREDENTIALS = {
     'ANTHROPIC_API_KEY': 'ANTHROPIC_API_KEY',
-    'GOOGLE_CALENDAR_ID_1': 'GOOGLE_CALENDAR_ID_1', 
+    'GOOGLE_CALENDAR_ID_1': 'GOOGLE_CALENDAR_ID_1',
     'GOOGLE_CALENDAR_ID_2': 'GOOGLE_CALENDAR_ID_2',
     'GMAIL_ADDRESS': 'GMAIL_ADDRESS',
     'EMAIL_SENDER_FILTER': 'EMAIL_SENDER_FILTER',
-    'TEACHER_1_EMAIL': 'TEACHER_1_EMAIL',  # Teacher 1 → Calendar 1
-    'TEACHER_2_EMAIL': 'TEACHER_2_EMAIL',  # Teacher 2 → Calendar 2
-    'TEACHER_3_EMAIL': 'TEACHER_3_EMAIL',  # Teacher 3 (Afterschool) → Both Calendars
-    'TEACHER_4_EMAIL': 'TEACHER_4_EMAIL',  # Teacher 4 (Afterschool) → Both Calendars
     'AI_MODEL': 'AI_MODEL',
     'DEFAULT_MONTHS_BACK': 'DEFAULT_MONTHS_BACK'
 }
@@ -117,33 +114,36 @@ class SecureCredentialManager:
     
     def validate_required_credentials(self) -> bool:
         """Validate that all required credentials are available"""
+        import re
         required_keys = [
             'ANTHROPIC_API_KEY',
-            'GOOGLE_CALENDAR_ID_1', 
+            'GOOGLE_CALENDAR_ID_1',
             'GOOGLE_CALENDAR_ID_2',
             'GMAIL_ADDRESS',
             'EMAIL_SENDER_FILTER',
-            'TEACHER_1_EMAIL',
-            'TEACHER_2_EMAIL',
-            'TEACHER_3_EMAIL',
-            'TEACHER_4_EMAIL'
         ]
-        
+
         try:
             credentials = self._load_credentials()
             missing_keys = []
-            
+
             for key in required_keys:
                 if key not in credentials or not credentials[key]:
                     missing_keys.append(key)
-            
+
             if missing_keys:
                 print(f"[!] Missing required credentials: {missing_keys}")
                 return False
-                
+
+            # Soft check: warn if no CALENDAR_N_Mail_X keys are found
+            cal_mail_pattern = re.compile(r'^CALENDAR_\d+_Mail_\d+$')
+            if not any(cal_mail_pattern.match(k) for k in credentials):
+                print("[!] WARNING: No CALENDAR_N_Mail_X email keys found in credentials.")
+                print("[!] Add keys like CALENDAR_1_Mail_1, CALENDAR_2_Mail_1, etc. to your Google Sheet.")
+
             print("[+] All required credentials are available")
             return True
-            
+
         except Exception as e:
             print(f"[!] Error validating credentials: {e}")
             return False

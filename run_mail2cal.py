@@ -52,10 +52,9 @@ def test_limited(limit=3):
     """Test with limited number of emails"""
     print(f"[*] TEST MODE - Processing only {limit} most recent emails")
     print("=" * 60)
-    
-    from troubleshooting.test_limited import LimitedMail2Cal
-    test_app = LimitedMail2Cal()
-    test_app.run_test()
+
+    app = Mail2Cal()
+    app.run(max_emails=limit)
 
 def cleanup_duplicates_cmd():
     """Clean up duplicate calendar events"""
