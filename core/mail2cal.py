@@ -480,7 +480,11 @@ class Mail2Cal:
                 if event_data['start_time']:
                     start_dt = event_data['start_time']
                     end_dt = event_data['end_time'] or start_dt + timedelta(hours=1)
-                    
+
+                    # Ensure end > start (prevents timeRangeEmpty API error)
+                    if end_dt <= start_dt:
+                        end_dt = start_dt + timedelta(hours=1)
+
                     # Prevent events longer than 8 hours (likely misinterpretation)
                     duration = end_dt - start_dt
                     if duration.total_seconds() > 8 * 3600:  # 8 hours
@@ -569,7 +573,11 @@ class Mail2Cal:
                 if event_data['start_time']:
                     start_dt = event_data['start_time']
                     end_dt = event_data['end_time'] or start_dt + timedelta(hours=1)
-                    
+
+                    # Ensure end > start (prevents timeRangeEmpty API error)
+                    if end_dt <= start_dt:
+                        end_dt = start_dt + timedelta(hours=1)
+
                     existing_event['start'] = {
                         'dateTime': start_dt.isoformat(),
                         'timeZone': 'America/Santiago',
@@ -731,7 +739,7 @@ class Mail2Cal:
                 potential_duplicates = self.smart_merger.find_potential_duplicates(events, email, target_calendars)
 
                 # Handle existing vs new events with unified duplicate detection
-                calendar_event_ids = []
+                calendar_event_ids = {}  # signature -> cal_event_id
                 sender_name = email.get('sender', '').split('<')[0].strip()
 
                 print(f"[*] Target calendars: {len(target_calendars)} ({'Calendar 1 only' if len(target_calendars) == 1 and target_calendars[0] == self.config['calendars']['calendar_id_1'] else 'Calendar 2 only' if len(target_calendars) == 1 else 'Both calendars'})")
@@ -744,11 +752,11 @@ class Mail2Cal:
                     if duplicate_info['action'] == 'merge' or self.smart_merger.should_auto_merge(duplicate_info):
                         print(f"[MERGE] Auto-merging duplicate event: {duplicate_info['new_event'].get('summary', 'Untitled')[:50]}...")
                         merged_event_id = self.smart_merger.merge_events(duplicate_info, self.calendar_service, self.config)
+                        new_event_signature = self.event_tracker.generate_event_signature(duplicate_info['new_event'])
                         if merged_event_id:
-                            calendar_event_ids.append(merged_event_id)
+                            calendar_event_ids[new_event_signature] = merged_event_id
                             stats['updated_events'] += 1
                             # Mark this event as processed
-                            new_event_signature = self.event_tracker.generate_event_signature(duplicate_info['new_event'])
                             processed_events.add(new_event_signature)
                         else:
                             stats['errors'] += 1
@@ -758,7 +766,7 @@ class Mail2Cal:
                         # Don't mark as processed, let it be created as new event
 
                 # Fallback: Use legacy signature-based matching for events not handled by AI
-                similar_events = self.event_tracker.find_similar_events(events)
+                similar_events = self.event_tracker.find_similar_events(events, target_calendars)
                 
                 # Second pass: Process remaining events (not handled by AI merger)
                 for event in events:
@@ -779,7 +787,7 @@ class Mail2Cal:
                             existing_event_id = similar_events[event_signature]
                             print(f"[LEGACY] Updating existing event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
                             if self.update_calendar_event(existing_event_id, event, calendar_id):
-                                calendar_event_ids.append(existing_event_id)
+                                calendar_event_ids[event_signature] = existing_event_id
                                 stats['updated_events'] += 1
 
                                 # Update the tracking for this event
@@ -791,7 +799,7 @@ class Mail2Cal:
                             print(f"[NEW] Creating new event in {calendar_name}: {event.get('summary', 'Untitled')[:50]}...")
                             event_id = self.create_calendar_event(event, calendar_id)
                             if event_id:
-                                calendar_event_ids.append(event_id)
+                                calendar_event_ids[event_signature] = event_id
                                 stats['new_events'] += 1
                             else:
                                 stats['errors'] += 1

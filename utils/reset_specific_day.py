@@ -19,7 +19,7 @@ TODAY = "2026-03-27"
 MAPPINGS_FILE = "event_mappings.json"
 
 # Event IDs from the log that may not appear in the JSON (created but not tracked)
-EXTRA_IDS_FROM_LOG = {}
+EXTRA_IDS_FROM_LOG = set()
 
 
 def authenticate():

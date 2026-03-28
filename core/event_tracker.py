@@ -73,11 +73,11 @@ class EventTracker:
         signature_content = f"{title}{start_time}{desc_snippet}"
         return hashlib.md5(signature_content.encode('utf-8')).hexdigest()
     
-    def track_email_processing(self, email: Dict, events: List[Dict], calendar_event_ids: List[str], calendar_id: str = None):
+    def track_email_processing(self, email: Dict, events: List[Dict], calendar_event_ids: Dict, calendar_id: str = None):
         """Track the relationship between an email and its generated calendar events"""
         email_id = email['id']
         email_hash = self.generate_email_hash(email)
-        
+
         self.mappings[email_id] = {
             'email_hash': email_hash,
             'email_subject': email['subject'],
@@ -87,11 +87,14 @@ class EventTracker:
             'calendar_events': [],
             'event_signatures': []
         }
-        
-        # Track each generated event
-        for i, (event, cal_event_id) in enumerate(zip(events, calendar_event_ids)):
+
+        # Track each generated event using signature lookup (not zip)
+        for event in events:
             event_signature = self.generate_event_signature(event)
-            
+            cal_event_id = calendar_event_ids.get(event_signature)
+            if not cal_event_id:
+                continue  # Event was skipped or failed — don't store a broken mapping
+
             self.mappings[email_id]['calendar_events'].append({
                 'calendar_event_id': cal_event_id,
                 'calendar_id': calendar_id,
@@ -100,9 +103,9 @@ class EventTracker:
                 'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,
                 'created_at': datetime.now().isoformat()
             })
-            
+
             self.mappings[email_id]['event_signatures'].append(event_signature)
-        
+
         self._save_mappings()
     
     def is_email_processed(self, email: Dict) -> bool:
@@ -163,28 +166,33 @@ class EventTracker:
             for event in self.mappings[email_id]['calendar_events']
         ]
     
-    def find_similar_events(self, new_events: List[Dict]) -> Dict[str, str]:
+    def find_similar_events(self, new_events: List[Dict], target_calendar_ids: List[str] = None) -> Dict[str, str]:
         """Find existing calendar events that are similar to new events"""
         similar_events = {}
-        
+
         for new_event in new_events:
             new_signature = self.generate_event_signature(new_event)
-            
+
             # Search through all existing mappings
             for email_id, mapping in self.mappings.items():
                 for stored_event in mapping['calendar_events']:
+                    # Skip events from other calendars
+                    stored_calendar_id = stored_event.get('calendar_id')
+                    if target_calendar_ids and stored_calendar_id and stored_calendar_id not in target_calendar_ids:
+                        continue
+
                     stored_signature = stored_event['event_signature']
-                    
+
                     # Check for exact signature match
                     if new_signature == stored_signature:
                         similar_events[new_signature] = stored_event['calendar_event_id']
                         break
-                    
+
                     # Check for similar events (same title and date)
                     if self._events_are_similar(new_event, stored_event):
                         similar_events[new_signature] = stored_event['calendar_event_id']
                         break
-        
+
         return similar_events
     
     def _events_are_similar(self, new_event: Dict, stored_event: Dict) -> bool:
