@@ -14,6 +14,31 @@ class EventTracker:
         self.storage_file = storage_file
         self.mappings = self._load_mappings()
     
+    def migrate_add_calendar_ids(self, calendar_1_emails: List[str], calendar_2_emails: List[str],
+                                   calendar_id_1: str, calendar_id_2: str):
+        """One-time migration: add calendar_id to existing tracked events that are missing it"""
+        cal1 = [e.lower() for e in calendar_1_emails]
+        cal2 = [e.lower() for e in calendar_2_emails]
+        patched = 0
+
+        for mapping in self.mappings.values():
+            sender = mapping.get('email_sender', '').lower()
+            if any(e in sender for e in cal1):
+                target_cal = calendar_id_1
+            elif any(e in sender for e in cal2):
+                target_cal = calendar_id_2
+            else:
+                continue  # Unknown sender — leave untouched
+
+            for cal_event in mapping.get('calendar_events', []):
+                if 'calendar_id' not in cal_event:
+                    cal_event['calendar_id'] = target_cal
+                    patched += 1
+
+        if patched:
+            self._save_mappings()
+            print(f"[*] Migration: added calendar_id to {patched} existing tracked event(s)")
+
     def _load_mappings(self) -> Dict:
         """Load existing email-to-event mappings from storage"""
         if os.path.exists(self.storage_file):
@@ -48,7 +73,7 @@ class EventTracker:
         signature_content = f"{title}{start_time}{desc_snippet}"
         return hashlib.md5(signature_content.encode('utf-8')).hexdigest()
     
-    def track_email_processing(self, email: Dict, events: List[Dict], calendar_event_ids: List[str]):
+    def track_email_processing(self, email: Dict, events: List[Dict], calendar_event_ids: List[str], calendar_id: str = None):
         """Track the relationship between an email and its generated calendar events"""
         email_id = email['id']
         email_hash = self.generate_email_hash(email)
@@ -69,6 +94,7 @@ class EventTracker:
             
             self.mappings[email_id]['calendar_events'].append({
                 'calendar_event_id': cal_event_id,
+                'calendar_id': calendar_id,
                 'event_signature': event_signature,
                 'summary': event.get('summary', ''),
                 'start_time': event.get('start_time').isoformat() if event.get('start_time') else None,

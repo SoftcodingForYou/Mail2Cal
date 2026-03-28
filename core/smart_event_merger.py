@@ -33,13 +33,13 @@ class SmartEventMerger:
             # For now, focus on Anthropic - can add OpenAI later
             raise ValueError(f"SmartEventMerger currently only supports Anthropic")
     
-    def find_potential_duplicates(self, new_events: List[Dict], source_email: Dict) -> List[Dict]:
+    def find_potential_duplicates(self, new_events: List[Dict], source_email: Dict, target_calendar_ids: List[str] = None) -> List[Dict]:
         """Find existing events that might be duplicates of new events"""
         potential_duplicates = []
 
         for new_event in new_events:
-            # Get basic candidate events (same date range)
-            candidates = self._get_candidate_events(new_event)
+            # Get basic candidate events (same date range, same calendar only)
+            candidates = self._get_candidate_events(new_event, target_calendar_ids)
 
             if not candidates:
                 continue
@@ -66,7 +66,7 @@ class SmartEventMerger:
 
         return potential_duplicates
     
-    def _get_candidate_events(self, new_event: Dict) -> List[Dict]:
+    def _get_candidate_events(self, new_event: Dict, target_calendar_ids: List[str] = None) -> List[Dict]:
         """Get existing events that could potentially be duplicates within a 2-week window from today"""
         from datetime import datetime, timedelta
 
@@ -105,6 +105,11 @@ class SmartEventMerger:
                         stored_datetime = datetime.strptime(stored_date_str[:10], '%Y-%m-%d')
 
                     # Check if within our 2-week window from today
+                    # and within the same calendar (no cross-calendar deduplication)
+                    stored_calendar_id = stored_event.get('calendar_id')
+                    if target_calendar_ids and stored_calendar_id and stored_calendar_id not in target_calendar_ids:
+                        continue
+
                     if today <= stored_datetime <= two_weeks_future:
                         candidates.append({
                             'event_data': stored_event,
@@ -177,7 +182,7 @@ Respond with ONLY valid JSON in this exact format (no other text):
             try:
                 message = self.client.messages.create(
                     model=self.ai_config['model_cheap'],  # Use cheap model for duplicate detection
-                    max_tokens=800,  # Reduced from 1500 (batch JSON response)
+                    max_tokens=4096,  # Increased to handle large batches
                     messages=[{
                         "role": "user",
                         "content": prompt
@@ -568,7 +573,7 @@ Respond with ONLY valid JSON in this format:
         from datetime import datetime, timedelta
 
         # Decide which event's timing to use based on strategy
-        preferred_time = merge_strategy.get('merge_strategy', {}).get('preferred_time', 'event2')
+        preferred_time = (merge_strategy.get('merge_strategy') or {}).get('preferred_time', 'event2')
 
         # Choose source event for timing
         if preferred_time == 'event1':

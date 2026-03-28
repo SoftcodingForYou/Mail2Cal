@@ -23,20 +23,28 @@ def _load_all():
         gmail_address = get_secure_credential('GMAIL_ADDRESS')
         sender_filter = get_secure_credential('EMAIL_SENDER_FILTER')
 
-        # Dynamically discover all CALENDAR_N_Mail_X email keys from the spreadsheet.
-        # This means you can add or remove emails in the sheet without touching this code.
+        # Dynamically discover all CALENDAR_N_Mail_X and CALENDAR_N_JE_Mail_X email keys
+        # from the spreadsheet. Add or remove emails in the sheet without touching this code.
         all_creds = get_credential_manager().get_all_credentials()
-        cal_mail_pattern = re.compile(r'^CALENDAR_(\d+)_Mail_\d+$')
-        calendar_emails: dict = {}
+        cal_mail_pattern    = re.compile(r'^CALENDAR_(\d+)_Mail_\d+$')
+        cal_je_mail_pattern = re.compile(r'^CALENDAR_(\d+)_JE_Mail_\d+$')
+        calendar_emails:    dict = {}  # regular senders per calendar number
+        calendar_je_emails: dict = {}  # JE / Jornada Extendida senders per calendar number
         for key, value in sorted(all_creds.items()):
             m = cal_mail_pattern.match(key)
             if m:
-                cal_num = int(m.group(1))
-                calendar_emails.setdefault(cal_num, []).append(value)
+                calendar_emails.setdefault(int(m.group(1)), []).append(value)
+                continue
+            m = cal_je_mail_pattern.match(key)
+            if m:
+                calendar_je_emails.setdefault(int(m.group(1)), []).append(value)
 
-        calendar_1_emails = calendar_emails.get(1, [])
-        calendar_2_emails = calendar_emails.get(2, [])
-        all_mapped_emails = calendar_1_emails + calendar_2_emails
+        calendar_1_emails    = calendar_emails.get(1, [])
+        calendar_2_emails    = calendar_emails.get(2, [])
+        calendar_1_je_emails = calendar_je_emails.get(1, [])
+        calendar_2_je_emails = calendar_je_emails.get(2, [])
+        all_mapped_emails = (calendar_1_emails + calendar_2_emails
+                             + calendar_1_je_emails + calendar_2_je_emails)
 
         # Build enhanced sender filter combining wildcard and all known calendar emails.
         # Gmail's wildcard search (from:*domain*) can be slow to index recent emails;
@@ -58,6 +66,8 @@ def _load_all():
                 'calendar_id_2': cal_id_2,
                 'calendar_1_emails': calendar_1_emails,
                 'calendar_2_emails': calendar_2_emails,
+                'calendar_1_je_emails': calendar_1_je_emails,
+                'calendar_2_je_emails': calendar_2_je_emails,
             },
             'gmail': {
                 'user_id': gmail_address,
@@ -88,8 +98,8 @@ def _load_all():
             },
         }
         print("[+] Credentials loaded securely from Google Sheets")
-        print(f"[+] Loaded {len(calendar_1_emails)} emails for Calendar 1, "
-              f"{len(calendar_2_emails)} emails for Calendar 2 "
+        print(f"[+] Loaded {len(calendar_1_emails)} regular + {len(calendar_1_je_emails)} JE emails for Calendar 1, "
+              f"{len(calendar_2_emails)} regular + {len(calendar_2_je_emails)} JE emails for Calendar 2 "
               f"({len(all_mapped_emails)} total mapped emails)")
         return _config_cache
 

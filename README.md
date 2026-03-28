@@ -94,9 +94,9 @@ python troubleshooting/test_limited.py
 
 The system automatically routes emails to appropriate calendars:
 
-- **Teacher 1 emails** → Calendar 1 only (8:00 AM default timing)
-- **Teacher 2 emails** → Calendar 2 only (8:00 AM default timing)
-- **Teacher 3 & 4 emails (Afterschool)** → Both calendars (1:00 PM default timing)
+- **Calendar 1 senders** (`CALENDAR_1_Mail_X`) → Calendar 1 only (8:00 AM default timing)
+- **Calendar 2 senders** (`CALENDAR_2_Mail_X`) → Calendar 2 only (8:00 AM default timing)
+- **JE senders** (`CALENDAR_N_JE_Mail_X`, Jornada Extendida) → same calendar N (1:00 PM default timing)
 - **Other school emails** → Both calendars (all-day events)
 
 ## 🧠 AI-Powered Smart Event Merging
@@ -157,7 +157,7 @@ pip install pdfplumber PyMuPDF
 
 ## ✅ Current Status
 
-- **Calendar 1**: Teacher 1 events + afterschool events (Teachers 3&4) + other school senders
-- **Calendar 2**: Teacher 2 events + afterschool events (Teachers 3&4) + other school senders
+- **Calendar 1**: Calendar 1 sender events + other school senders
+- **Calendar 2**: Calendar 2 sender events + other school senders
 - **System**: Fully operational with correct multi-calendar routing
 - **Migration**: All events properly distributed (July 2025)

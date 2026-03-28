@@ -137,6 +137,12 @@ HORARIO POR DEFECTO PARA EVENTOS SIN HORA ESPECIFICADA:
 - Si NO se especifica hora, establecer start_time como "08:00" y end_time como "10:00" (2 horas de duración)
 - Solo usar all_day: true si específicamente se menciona que es "todo el día" o similar
 """
+        elif sender_type == 'afterschool':
+            default_time_guidance = """
+HORARIO POR DEFECTO PARA EVENTOS SIN HORA ESPECIFICADA (JORNADA EXTENDIDA):
+- Si NO se especifica hora, establecer start_time como "13:00" y end_time como "15:00" (2 horas de duración)
+- Solo usar all_day: true si específicamente se menciona que es "todo el día" o similar
+"""
         else:
             default_time_guidance = """
 HORARIO POR DEFECTO PARA OTROS REMITENTES:
@@ -268,7 +274,7 @@ Responde SOLO con JSON válido, sin texto adicional.
         """Query Anthropic API"""
         response = self.client.messages.create(
             model=self.ai_config['model'],
-            max_tokens=3000,
+            max_tokens=8192,
             temperature=0.1,
             system="You are an expert at extracting structured event information from educational emails. Always respond with valid JSON only.",
             messages=[

@@ -117,9 +117,9 @@ python run_mail2cal.py
 - **Content Types**: Holiday schedules, activity calendars, special announcements
 
 ### 🎓 Multi-Calendar Smart Routing
-- **Teacher 1** → Calendar 1 only (8:00 AM default timing)
-- **Teacher 2** → Calendar 2 only (8:00 AM default timing)
-- **Teachers 3 & 4 (Afterschool)** → Both calendars (1:00 PM default timing)
+- **Calendar 1 senders** (`CALENDAR_1_Mail_X`) → Calendar 1 only (8:00 AM default timing)
+- **Calendar 2 senders** (`CALENDAR_2_Mail_X`) → Calendar 2 only (8:00 AM default timing)
+- **JE senders** (`CALENDAR_N_JE_Mail_X`, Jornada Extendida) → same calendar N (1:00 PM default timing)
 - **Other school emails** → Both calendars (all-day events)
 
 ### 📅 Smart Event Management
@@ -171,8 +171,8 @@ python run_mail2cal.py
 - OAuth 2.0 authentication with Google APIs
 
 ### ⏰ Intelligent Default Timing
-- **Teachers 1 & 2**: 8:00 AM - 10:00 AM (2 hours) when no time specified
-- **Afterschool Teachers (3 & 4)**: 1:00 PM - 3:00 PM (2 hours) when no time specified
+- **Calendar 1 & 2 senders**: 8:00 AM - 10:00 AM (2 hours) when no time specified
+- **JE senders (Jornada Extendida)**: 1:00 PM - 3:00 PM (2 hours) when no time specified
 - **Other senders**: All-day events when no time specified
 - **Specific times mentioned**: Uses times from email content
 
@@ -226,10 +226,10 @@ The system uses Google Sheets for secure credential storage:
 | `GOOGLE_CALENDAR_ID_2` | Calendar 2 ID | user@gmail.com |
 | `GMAIL_ADDRESS` | Gmail account to scan | user@gmail.com |
 | `EMAIL_SENDER_FILTER` | Email filter query | from:*@school.com |
-| `TEACHER_1_EMAIL` | Teacher 1 → Calendar 1 only | teacher1@school.com |
-| `TEACHER_2_EMAIL` | Teacher 2 → Calendar 2 only | teacher2@school.com |
-| `TEACHER_3_EMAIL` | Teacher 3 → Both calendars (Afterschool) | teacher3@school.com |
-| `TEACHER_4_EMAIL` | Teacher 4 → Both calendars (Afterschool) | teacher4@school.com |
+| `CALENDAR_1_Mail_1` | Email address routed to Calendar 1 only (8:00 AM default) | teacher1@school.com |
+| `CALENDAR_2_Mail_1` | Email address routed to Calendar 2 only (8:00 AM default) | teacher2@school.com |
+| `CALENDAR_1_JE_Mail_1` | JE email routed to Calendar 1 only (1:00 PM default) | je-teacher1@school.com |
+| `CALENDAR_2_JE_Mail_1` | JE email routed to Calendar 2 only (1:00 PM default) | je-teacher2@school.com |
 | `AI_MODEL` | Claude model for event extraction (powerful) | claude-sonnet-4-5-20250929 |
 | `AI_MODEL_CHEAP` | Claude model for classification & duplicates (cheap) | claude-haiku-4-5-20251001 |
 | `DEFAULT_MONTHS_BACK` | How many months to scan (supports decimals: 0.5 = 2 weeks) | 1.0 |

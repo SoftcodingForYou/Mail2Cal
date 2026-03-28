@@ -23,10 +23,10 @@ Create a Google Sheets document with these credentials:
 | `GOOGLE_CALENDAR_ID_2` | `cal2@group.calendar.google.com` | Calendar 2 ID |
 | `GMAIL_ADDRESS` | `your-email@gmail.com` | Gmail account to scan |
 | `EMAIL_SENDER_FILTER` | `from:*school.com` | Email filter query |
-| `TEACHER_1_EMAIL` | `teacher1@school.com` | Teacher 1 → Calendar 1 only |
-| `TEACHER_2_EMAIL` | `teacher2@school.com` | Teacher 2 → Calendar 2 only |
-| `TEACHER_3_EMAIL` | `teacher3@school.com` | Teacher 3 → Both calendars (Afterschool) |
-| `TEACHER_4_EMAIL` | `teacher4@school.com` | Teacher 4 → Both calendars (Afterschool) |
+| `CALENDAR_1_Mail_1` | `teacher1@school.com` | Email routed to Calendar 1 only (8:00 AM default) |
+| `CALENDAR_2_Mail_1` | `teacher2@school.com` | Email routed to Calendar 2 only (8:00 AM default) |
+| `CALENDAR_1_JE_Mail_1` | `je-teacher1@school.com` | JE email routed to Calendar 1 only (1:00 PM default) |
+| `CALENDAR_2_JE_Mail_1` | `je-teacher2@school.com` | JE email routed to Calendar 2 only (1:00 PM default) |
 | `AI_MODEL` | `claude-3-5-sonnet-20241022` | Claude model to use |
 | `DEFAULT_MONTHS_BACK` | `12` | How many months to scan (supports decimals: 0.5 = 2 weeks, 1.5 = 6 weeks) |
 
@@ -130,9 +130,9 @@ python run_mail2cal.py --full
 
 ## Email Routing
 
-- **Teacher 1** → Calendar 1 only (8:00 AM default)
-- **Teacher 2** → Calendar 2 only (8:00 AM default)  
-- **Teachers 3 & 4** → Both calendars (1:00 PM default, Afterschool)
+- **Calendar 1 senders** (`CALENDAR_1_Mail_X`) → Calendar 1 only (8:00 AM default)
+- **Calendar 2 senders** (`CALENDAR_2_Mail_X`) → Calendar 2 only (8:00 AM default)
+- **JE senders** (`CALENDAR_N_JE_Mail_X`) → same calendar N (1:00 PM default)
 - **Others** → Both calendars (all-day events)
 
 ## Features

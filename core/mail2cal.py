@@ -45,6 +45,13 @@ class Mail2Cal:
         self.token_tracker = TokenTracker()
         self.ai_parser = AIEmailParser(self.config, self.token_tracker)
         self.event_tracker = EventTracker(self.config['event_tracking']['storage_file'])
+        cal = self.config['calendars']
+        self.event_tracker.migrate_add_calendar_ids(
+            calendar_1_emails=cal['calendar_1_emails'] + cal['calendar_1_je_emails'],
+            calendar_2_emails=cal['calendar_2_emails'] + cal['calendar_2_je_emails'],
+            calendar_id_1=cal['calendar_id_1'],
+            calendar_id_2=cal['calendar_id_2']
+        )
         self.smart_merger = SmartEventMerger(self.config['ai_service'], self.event_tracker, self.token_tracker)
         self.global_cache = GlobalEventCache()
         self.pdf_processor = None  # Will be initialized after Gmail service is ready
@@ -252,23 +259,27 @@ class Mail2Cal:
     def get_sender_type(self, email: Dict) -> str:
         """Determine sender type for AI parsing context"""
         sender = email.get('sender', '').lower()
-        cal1_emails = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
-        cal2_emails = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+        cal1_emails    = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
+        cal2_emails    = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+        cal1_je_emails = [e.lower() for e in self.config['calendars']['calendar_1_je_emails']]
+        cal2_je_emails = [e.lower() for e in self.config['calendars']['calendar_2_je_emails']]
 
-        if any(e in sender for e in cal1_emails):
-            return 'calendar_1'  # Calendar 1 sender (8:00 AM default)
+        if any(e in sender for e in cal1_je_emails + cal2_je_emails):
+            return 'afterschool'  # JE sender (13:00 default)
+        elif any(e in sender for e in cal1_emails):
+            return 'calendar_1'   # Calendar 1 sender (8:00 AM default)
         elif any(e in sender for e in cal2_emails):
-            return 'calendar_2'  # Calendar 2 sender (8:00 AM default)
+            return 'calendar_2'   # Calendar 2 sender (8:00 AM default)
         else:
-            return 'other'  # Other senders (all-day default)
+            return 'other'        # Other senders (all-day default)
     
     def get_target_calendars(self, email: Dict) -> List[str]:
         """Determine which calendar(s) to use based on email sender.
 
-        Routing rules (driven entirely by CALENDAR_N_Mail_X keys in the spreadsheet):
-          - Sender in calendar_1_emails → Calendar 1 only
-          - Sender in calendar_2_emails → Calendar 2 only
-          - Unknown sender              → Both calendars (safe default)
+        Routing rules (driven by CALENDAR_N_Mail_X and CALENDAR_N_JE_Mail_X keys):
+          - Sender in calendar_1_emails or calendar_1_je_emails → Calendar 1 only
+          - Sender in calendar_2_emails or calendar_2_je_emails → Calendar 2 only
+          - Unknown sender                                       → Both calendars (safe default)
         """
         sender = email.get('sender', '').lower()
 
@@ -276,14 +287,16 @@ class Mail2Cal:
         print(f"[DEBUG] Raw sender: {email.get('sender', '')}")
         print(f"[DEBUG] Sender (lowercase): {sender}")
 
-        cal1_emails = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
-        cal2_emails = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+        cal1_emails    = [e.lower() for e in self.config['calendars']['calendar_1_emails']]
+        cal2_emails    = [e.lower() for e in self.config['calendars']['calendar_2_emails']]
+        cal1_je_emails = [e.lower() for e in self.config['calendars']['calendar_1_je_emails']]
+        cal2_je_emails = [e.lower() for e in self.config['calendars']['calendar_2_je_emails']]
 
-        print(f"[DEBUG] Calendar 1 emails ({len(cal1_emails)}): {cal1_emails}")
-        print(f"[DEBUG] Calendar 2 emails ({len(cal2_emails)}): {cal2_emails}")
+        print(f"[DEBUG] Calendar 1 emails ({len(cal1_emails)} regular, {len(cal1_je_emails)} JE): {cal1_emails + cal1_je_emails}")
+        print(f"[DEBUG] Calendar 2 emails ({len(cal2_emails)} regular, {len(cal2_je_emails)} JE): {cal2_emails + cal2_je_emails}")
 
-        matched_cal1 = [e for e in cal1_emails if e in sender]
-        matched_cal2 = [e for e in cal2_emails if e in sender]
+        matched_cal1 = [e for e in cal1_emails + cal1_je_emails if e in sender]
+        matched_cal2 = [e for e in cal2_emails + cal2_je_emails if e in sender]
 
         if matched_cal1:
             print(f"[DEBUG] MATCH Calendar 1 ({matched_cal1[0]}) -> Calendar 1 only")
@@ -710,15 +723,15 @@ class Mail2Cal:
                     event['source_email_date'] = email.get('date', '')
                     event['source_email_id'] = email.get('id', '')
                 
+                # Determine target calendars based on sender
+                target_calendars = self.get_target_calendars(email)
+
                 # UNIFIED: Use AI-powered smart duplicate detection with 2-week window
                 print("[AI] Checking for potential duplicate events (2-week window from today)...")
-                potential_duplicates = self.smart_merger.find_potential_duplicates(events, email)
+                potential_duplicates = self.smart_merger.find_potential_duplicates(events, email, target_calendars)
 
                 # Handle existing vs new events with unified duplicate detection
                 calendar_event_ids = []
-
-                # Determine target calendars based on sender
-                target_calendars = self.get_target_calendars(email)
                 sender_name = email.get('sender', '').split('<')[0].strip()
 
                 print(f"[*] Target calendars: {len(target_calendars)} ({'Calendar 1 only' if len(target_calendars) == 1 and target_calendars[0] == self.config['calendars']['calendar_id_1'] else 'Calendar 2 only' if len(target_calendars) == 1 else 'Both calendars'})")
@@ -784,7 +797,7 @@ class Mail2Cal:
                                 stats['errors'] += 1
                 
                 # Track the email processing
-                self.event_tracker.track_email_processing(email, events, calendar_event_ids)
+                self.event_tracker.track_email_processing(email, events, calendar_event_ids, calendar_id=target_calendars[0] if target_calendars else None)
                 stats['processed'] += 1
                 
             except Exception as e:
