@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import openai
 import anthropic
+from .event_normalizer import normalize_event
 
 
 class AIEmailParser:
@@ -183,7 +184,7 @@ Para cada evento encontrado, proporciona una respuesta JSON con esta estructura 
   "events": [
     {{
       "title": "Título claro y conciso del evento EN ESPAÑOL CHILENO FORMAL",
-      "description": "Descripción detallada incluyendo toda la información relevante del email EN ESPAÑOL CHILENO FORMAL",
+      "description": "Descripción completa del evento. Incluir TODO el contexto relevante: propósito, actividad, antecedentes. NO resumir ni omitir información. EN ESPAÑOL CHILENO FORMAL",
       "start_date": "YYYY-MM-DD",
       "start_time": "HH:MM" o null si no se especifica,
       "end_date": "YYYY-MM-DD" o null si es igual a start_date,
@@ -193,7 +194,11 @@ Para cada evento encontrado, proporciona una respuesta JSON con esta estructura 
       "event_type": "tarea|reunion|actividad|ceremonia|presentacion|solicitud_material|general",
       "priority": "alta|media|baja",
       "recurring": true/false,
-      "notes": "Cualquier detalle adicional importante EN ESPAÑOL CHILENO FORMAL"
+      "notes": "Cualquier detalle adicional importante EN ESPAÑOL CHILENO FORMAL",
+      "instructions": ["Acción específica 1 que debe realizarse", "Acción específica 2", "..."],
+      "materials_needed": ["Ítem específico 1 con cantidad y características", "Ítem 2", "..."],
+      "parent_info": "Información o acciones específicas para apoderados (asistir, autorizar, coordinar, etc.). null si no aplica.",
+      "schedule_details": "Detalles de horario y logística más allá del horario principal: hora de llegada, cambios de transporte, horario de almuerzo, hora de retiro, código de vestimenta, etc. null si no aplica."
     }}
   ]
 }}
@@ -211,7 +216,13 @@ DIRECTRICES IMPORTANTES:
 8. EVITAR eventos recurrentes - crear solo eventos únicos. Solo usar recurring: true para actividades ESPECÍFICAMENTE mencionadas como semanales/recurrentes
 9. Si no se encuentran eventos (o solo hay eventos pasados), devolver {{"events": []}}
 10. IMPORTANTE: TODO el texto debe estar en ESPAÑOL CHILENO FORMAL (usar "usted", evitar anglicismos)
-11. SOLICITUDES DE MATERIALES: Crear eventos tipo "solicitud_material" cuando se pida traer:
+11. CAPTURA COMPLETA DE INFORMACIÓN: Cada campo debe contener TODO lo mencionado en el email para ese evento, sin resumir ni omitir.
+    - "instructions": Lista EXHAUSTIVA de todas las acciones requeridas (firmar, confirmar, preparar, enviar, autorizar, etc.)
+    - "materials_needed": Lista EXHAUSTIVA de TODO lo que se debe traer o preparar, con cantidades y características específicas si se mencionan
+    - "parent_info": TODA la información dirigida a apoderados (asistir a ceremonia, retirar temprano, autorizar, coordinar transporte, etc.)
+    - "schedule_details": TODOS los detalles de horario y logística (hora de llegada específica, horario de colación, cambios de bus, código de vestimenta, etc.)
+    Si un campo no tiene información relevante, usar lista vacía [] para arrays o null para strings.
+12. SOLICITUDES DE MATERIALES: Crear eventos tipo "solicitud_material" cuando se pida traer:
     - Materiales reciclados (botellas, cartón, etc.)
     - Disfraces o ropa especial
     - Útiles escolares específicos
@@ -341,6 +352,7 @@ Responde SOLO con JSON válido, sin texto adicional.
             for event_data in data.get('events', []):
                 event = self._convert_ai_event_to_internal(event_data, email)
                 if event:
+                    event = normalize_event(event)
                     events.append(event)
             
             return events
@@ -404,7 +416,13 @@ Responde SOLO con JSON válido, sin texto adicional.
                 'priority': ai_event.get('priority', 'medium'),
                 'recurring': ai_event.get('recurring', False),
                 'ai_notes': ai_event.get('notes', ''),
-                'last_updated': datetime.now().isoformat()
+                'last_updated': datetime.now().isoformat(),
+                '_raw_ai_description': ai_event.get('description', ''),
+                '_raw_ai_notes': ai_event.get('notes', ''),
+                '_raw_instructions': ai_event.get('instructions', []),
+                '_raw_materials_needed': ai_event.get('materials_needed', []),
+                '_raw_parent_info': ai_event.get('parent_info') or '',
+                '_raw_schedule_details': ai_event.get('schedule_details') or '',
             }
             
         except Exception as e:

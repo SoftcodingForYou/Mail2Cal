@@ -181,7 +181,7 @@ Respond with ONLY valid JSON in this exact format (no other text):
         for attempt in range(max_retries):
             try:
                 message = self.client.messages.create(
-                    model=self.ai_config['model_cheap'],  # Use cheap model for duplicate detection
+                    model=self.ai_config['model'],  # Use Sonnet for accurate duplicate detection
                     max_tokens=4096,  # Increased to handle large batches
                     messages=[{
                         "role": "user",
@@ -195,7 +195,7 @@ Respond with ONLY valid JSON in this exact format (no other text):
                 if self.token_tracker:
                     self.token_tracker.log_call(
                         operation='duplicate_detection_batch',
-                        model=self.ai_config['model_cheap'],
+                        model=self.ai_config['model'],
                         input_tokens=message.usage.input_tokens,
                         output_tokens=message.usage.output_tokens,
                         metadata={'batch_size': len(candidates)}
@@ -306,7 +306,7 @@ You must respond with ONLY valid JSON in this exact format (no other text):
         for attempt in range(max_retries):
             try:
                 message = self.client.messages.create(
-                    model=self.ai_config['model_cheap'],  # Use cheap model for duplicate detection
+                    model=self.ai_config['model'],  # Use Sonnet for accurate duplicate detection
                     max_tokens=500,  # Reduced from 1500 (only need small JSON)
                     messages=[{
                         "role": "user",
@@ -320,7 +320,7 @@ You must respond with ONLY valid JSON in this exact format (no other text):
                 if self.token_tracker:
                     self.token_tracker.log_call(
                         operation='duplicate_detection_single',
-                        model=self.ai_config['model_cheap'],
+                        model=self.ai_config['model'],
                         input_tokens=message.usage.input_tokens,
                         output_tokens=message.usage.output_tokens,
                         metadata={}
@@ -450,7 +450,7 @@ Respond with ONLY valid JSON in this format:
         for attempt in range(max_retries):
             try:
                 message = self.client.messages.create(
-                    model=self.ai_config['model_cheap'],  # Use Haiku for merging
+                    model=self.ai_config['model'],  # Use Sonnet for better merge quality
                     max_tokens=1000,
                     messages=[{
                         "role": "user",
@@ -464,7 +464,7 @@ Respond with ONLY valid JSON in this format:
                 if self.token_tracker:
                     self.token_tracker.log_call(
                         operation='event_merge',
-                        model=self.ai_config['model_cheap'],
+                        model=self.ai_config['model'],
                         input_tokens=message.usage.input_tokens,
                         output_tokens=message.usage.output_tokens,
                         metadata={'attempt': attempt + 1}
