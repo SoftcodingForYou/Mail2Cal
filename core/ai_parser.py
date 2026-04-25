@@ -262,8 +262,6 @@ Entonces:
 
 CONTEXTO: Este es para un jardín infantil chileno, así que espera idioma español y formatos de fecha/hora chilenos.
 
-IMPORTANTE: Usa solo caracteres ASCII en el JSON. Reemplaza acentos (á→a, é→e, í→i, ó→o, ú→u, ñ→n) para evitar errores de codificación.
-
 Responde SOLO con JSON válido, sin texto adicional.
 """
         return prompt
