@@ -125,35 +125,39 @@ class EventTracker:
         return current_hash != stored_hash
     
     def events_still_exist(self, email: Dict, calendar_service, calendar_ids: List[str]) -> bool:
-        """Check if the tracked events for an email still exist in the calendars"""
+        """Check if ALL tracked events for an email still exist in the calendars"""
         email_id = email['id']
         if email_id not in self.mappings:
             return False
-        
+
         tracked_events = self.mappings[email_id]['calendar_events']
         if not tracked_events:
             return False
-        
-        # Check if at least one tracked event still exists
+
+        # ALL tracked events must exist — if any is missing, trigger reprocessing
         for event_info in tracked_events:
             event_id = event_info['calendar_event_id']
-            
+
             # Try to find this event in any of the calendars
+            found = False
             for calendar_id in calendar_ids:
                 try:
-                    calendar_service.events().get(
+                    result = calendar_service.events().get(
                         calendarId=calendar_id,
                         eventId=event_id
                     ).execute()
-                    # If we get here, the event exists
-                    return True
+                    # Google marks deleted events as "cancelled" instead of 404
+                    if result.get('status') != 'cancelled':
+                        found = True
+                        break
                 except:
-                    # Event doesn't exist in this calendar, try next
                     continue
-        
-        # None of the tracked events exist
-        print(f"[!] Tracked events for email '{email['subject'][:40]}...' no longer exist in calendars")
-        return False
+
+            if not found:
+                print(f"[!] Missing event '{event_info.get('summary', event_id)[:40]}' for email '{email['subject'][:40]}' — reprocessing")
+                return False
+
+        return True
     
     def get_existing_calendar_events(self, email: Dict) -> List[str]:
         """Get list of calendar event IDs for a given email"""
