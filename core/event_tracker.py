@@ -316,12 +316,48 @@ class EventTracker:
         }
     
     def cleanup_orphaned_mappings(self, existing_email_ids: Set[str]):
-        """Remove mappings for emails that no longer exist"""
+        """Remove mappings for emails that no longer exist, but preserve future events"""
+        from datetime import datetime
+
         orphaned_email_ids = set(self.mappings.keys()) - existing_email_ids
-        
-        if orphaned_email_ids:
-            print(f"Cleaning up {len(orphaned_email_ids)} orphaned email mappings")
-            events_to_delete = self.mark_events_for_deletion(orphaned_email_ids)
-            return events_to_delete
-        
-        return []
+
+        if not orphaned_email_ids:
+            return []
+
+        print(f"Cleaning up {len(orphaned_email_ids)} orphaned email mappings")
+
+        now = datetime.now()
+        events_to_delete = []
+        emails_fully_orphaned = []
+
+        for email_id in orphaned_email_ids:
+            if email_id not in self.mappings:
+                continue
+
+            has_future_events = False
+            for event in self.mappings[email_id]['calendar_events']:
+                start_time_str = event.get('start_time')
+                if start_time_str:
+                    try:
+                        start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                        if start_dt.tzinfo:
+                            start_dt = start_dt.replace(tzinfo=None)
+                        if start_dt > now:
+                            has_future_events = True
+                            print(f"[PRESERVE] Keeping future event '{event.get('summary', 'Unknown')[:40]}' on {start_time_str[:10]}")
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                # Only queue past events for deletion
+                events_to_delete.append(event['calendar_event_id'])
+
+            if not has_future_events:
+                # Safe to remove this mapping entirely
+                emails_fully_orphaned.append(email_id)
+            # If it has future events, keep the mapping so they remain tracked
+
+        for email_id in emails_fully_orphaned:
+            del self.mappings[email_id]
+
+        self._save_mappings()
+        return events_to_delete
